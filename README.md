@@ -18,82 +18,36 @@ modes:
 
 ## Run it on a Mac (from scratch)
 
-These steps assume a Mac with no developer tools installed. Commands go in
-the **Terminal** app.
+Tested for an Intel MacBook Air with nothing installed. Homebrew is
+deliberately **not** used: since September 2026 it no longer ships prebuilt
+packages for Intel Macs, so it would compile Python and Node from source.
 
-### 1. One-time installs (≈10 minutes)
+1. **Command-line tools** (provides `git`): run `xcode-select --install` in Terminal.
+2. **Python 3.13:** the "macOS 64-bit universal2 installer" from
+   https://www.python.org/downloads/macos/. Afterwards run
+   *Install Certificates.command* from `/Applications/Python 3.13/`.
+3. **Node.js:** the LTS "macOS Installer (.pkg)" from https://nodejs.org.
+4. **Set up FINN** (creates `.venv`, installs packages, builds the UI, runs the tests):
+   ```bash
+   cd ~/Projects/finn
+   bash scripts/setup.sh
+   ```
+5. *(Optional)* paste a free Gemini key into `.env`
+   (https://aistudio.google.com/apikey): `open -e .env`
+6. **Fetch live data, then start the app:**
+   ```bash
+   bash scripts/refresh.sh     # filings (NSE, BSE fallback) + prices (Yahoo), ~1–2 min
+   bash scripts/start.sh       # open http://localhost:8000 ; Ctrl+C to stop
+   ```
+   `start.sh` also prints an address for your phone on the same Wi-Fi.
 
-```bash
-# Apple's command-line tools (git, compilers). A dialog pops up; click Install.
-xcode-select --install
+**While developing the UI:** run `bash scripts/start.sh` in one Terminal and
+`cd frontend && npm run dev` in another, then open http://localhost:5173.
 
-# Homebrew, the Mac package manager. Follow the "Next steps" it prints at the end
-# (on Intel Macs it usually needs no extra step).
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Python 3.12 and Node.js 22
-brew install python@3.12 node@22
-brew link --overwrite node@22
-python3.12 --version   # should print 3.12.x
-node --version         # should print v22.x
-```
-
-### 2. Get the code and install dependencies
-
-```bash
-git clone https://github.com/<your-username>/finn.git
-cd finn
-
-# Python packages in an isolated virtual environment
-python3.12 -m venv .venv
-source .venv/bin/activate          # run this again in every new Terminal window
-pip install -r backend/requirements.txt
-
-# Frontend packages
-cd frontend && npm install && cd ..
-```
-
-### 3. (Optional) add a model key
-
-```bash
-cp .env.example .env
-open -e .env       # paste a free Gemini key from https://aistudio.google.com/apikey
-```
-
-Without a key everything still works; generic filings ("General Updates") just
-stay unclassified instead of being read by the model.
-
-### 4. Fetch live data and run
-
-```bash
-source .venv/bin/activate
-cd backend
-python -m finn.cli refresh        # pulls filings (NSE, BSE fallback) + prices (Yahoo); ~1–2 min
-python -m finn.cli sources        # shows which sources succeeded
-
-cd ../frontend && npm run build && cd ../backend
-uvicorn finn.api:app --port 8000  # open http://localhost:8000
-```
-
-To open it on your phone, connect it to the same Wi-Fi network and run
-`uvicorn finn.api:app --host 0.0.0.0 --port 8000`. Then open
-`http://<your-mac's-IP>:8000` on the phone (System Settings → Wi-Fi → Details
-shows the IP).
-
-**While developing the UI**, run the backend with
-`uvicorn finn.api:app --reload --port 8000`, and in a second Terminal run
-`cd frontend && npm run dev`. Then open http://localhost:5173. Changes appear
-instantly.
-
-### 5. Tests
-
-```bash
-cd backend && python -m pytest -q
-```
-
-The tests run offline. They cover the classifier (22 real-world subject
-patterns), the NSE/BSE parsers, alert arithmetic, the NSE→BSE fallback, the
-snapshot round-trip and the full refresh → database → API flow.
+**Tests:** `cd backend && source ../.venv/bin/activate && python -m pytest -q`.
+They run offline and cover the classifier (22 real-world subject patterns),
+the NSE/BSE parsers, alert maths, the NSE→BSE fallback, the snapshot
+round-trip, the LLM cache, and the full refresh → database → API flow.
 
 ---
 
