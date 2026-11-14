@@ -1,0 +1,10 @@
+{"Table": [
+  {"NEWSID": "b-1111", "SCRIP_CD": 500325, "NEWSSUB": "Reliance Industries Ltd - 500325 - Announcement under Regulation 30 (LODR)-Credit Rating",
+   "DT_TM": "2026-11-13T17:05:22.457", "NEWS_DT": "2026-11-13T17:05:22.457", "CATEGORYNAME": "Company Update",
+   "SUBCATNAME": "Credit Rating", "HEADLINE": "CRISIL has reaffirmed the long-term rating of the Company at CRISIL AAA/Stable.",
+   "ATTACHMENTNAME": "sample-rating.pdf", "SLONGNAME": "Reliance Industries Ltd"},
+  {"NEWSID": "b-2222", "SCRIP_CD": 500325, "NEWSSUB": "Reliance Industries Ltd - 500325 - Acquisition",
+   "DT_TM": "2026-11-12T20:41:00", "CATEGORYNAME": "Company Update", "SUBCATNAME": "Acquisition",
+   "HEADLINE": "Intimation of acquisition of 51% stake in a renewable energy company.", "ATTACHMENTNAME": "sample-acq.pdf"},
+  {"NEWSID": "", "DT_TM": "2026-11-12T20:41:00", "HEADLINE": "row with no id is skipped"}
+], "Table1": [{"ROWCNT": 3}]}

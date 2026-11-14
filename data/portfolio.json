@@ -1,0 +1,24 @@
+{
+  "_note": "Mock demo portfolio. bse_code is used only for the BSE fallback source. CDSL is listed on NSE only.",
+  "portfolio": [
+    {"symbol": "RELIANCE",   "name": "Reliance Industries",        "sector": "Conglomerate",      "bse_code": "500325", "financial": false},
+    {"symbol": "HDFCBANK",   "name": "HDFC Bank",                  "sector": "Banking",           "bse_code": "500180", "financial": true},
+    {"symbol": "TCS",        "name": "Tata Consultancy Services",  "sector": "IT services",       "bse_code": "532540", "financial": false},
+    {"symbol": "INFY",       "name": "Infosys",                    "sector": "IT services",       "bse_code": "500209", "financial": false},
+    {"symbol": "ITC",        "name": "ITC",                        "sector": "FMCG",              "bse_code": "500875", "financial": false},
+    {"symbol": "LT",         "name": "Larsen & Toubro",            "sector": "Capital goods",     "bse_code": "500510", "financial": false},
+    {"symbol": "BHARTIARTL", "name": "Bharti Airtel",              "sector": "Telecom",           "bse_code": "532454", "financial": false},
+    {"symbol": "SUNPHARMA",  "name": "Sun Pharmaceutical",         "sector": "Pharma",            "bse_code": "524715", "financial": false},
+    {"symbol": "MARUTI",     "name": "Maruti Suzuki",              "sector": "Automobiles",       "bse_code": "532500", "financial": false},
+    {"symbol": "TITAN",      "name": "Titan Company",              "sector": "Consumer",          "bse_code": "500114", "financial": false},
+    {"symbol": "TRENT",      "name": "Trent",                      "sector": "Retail",            "bse_code": "500251", "financial": false},
+    {"symbol": "POLYCAB",    "name": "Polycab India",              "sector": "Cables & wires",    "bse_code": "542652", "financial": false},
+    {"symbol": "PERSISTENT", "name": "Persistent Systems",         "sector": "IT services",       "bse_code": "533179", "financial": false},
+    {"symbol": "CDSL",       "name": "Central Depository Services","sector": "Capital markets",   "bse_code": null,     "financial": false},
+    {"symbol": "DEEPAKNTR",  "name": "Deepak Nitrite",             "sector": "Chemicals",         "bse_code": "506401", "financial": false},
+    {"symbol": "KPITTECH",   "name": "KPIT Technologies",          "sector": "Auto software",     "bse_code": "542651", "financial": false},
+    {"symbol": "IRCTC",      "name": "IRCTC",                      "sector": "Travel (PSU)",      "bse_code": "542830", "financial": false},
+    {"symbol": "HAL",        "name": "Hindustan Aeronautics",      "sector": "Defence (PSU)",     "bse_code": "541154", "financial": false}
+  ],
+  "research_demo": ["BAJFINANCE", "DIXON", "ASIANPAINT"]
+}
