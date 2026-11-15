@@ -210,6 +210,11 @@ def build_view(raw: dict, financial_flag: bool, page_texts: list[str], pages_sel
 
     fmt = raw.get("format") or "corporate"
     financial = financial_flag or fmt in ("bank", "nbfc", "insurance")
+    # Lenders file in the same Ind-AS layout as manufacturers, so detect them from the numbers:
+    # interest paid above a quarter of revenue only happens when interest IS the cost of the product.
+    rev0, fin0 = (lines["revenue_from_operations"] or [None])[0], (lines["finance_costs"] or [None])[0]
+    if not financial and rev0 and fin0 and fin0 / rev0 > 0.25:
+        financial, fmt = True, "nbfc"
     dated = [(i, _to_date(c.get("period_end")), c.get("period_type")) for i, c in enumerate(cols)]
     quarters = sorted([(d, i) for i, d, t in dated if d and t == "quarter"], reverse=True)
     if not quarters:

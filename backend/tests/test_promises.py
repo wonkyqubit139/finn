@@ -100,3 +100,24 @@ def test_company_revenue_target_uses_labelled_run_rate():
     bad = {"metric": "revenue_growth", "scope": "company", "period_text": "Q2 FY27",
            "target": {"type": "at_least", "low": 5000, "unit": "crore"}}
     assert evaluate(bad, SAID, SERIES, LATEST)["status"] == "unverifiable"
+
+
+def test_real_bajaj_cases_not_scored_against_pnl():
+    # model mapped these to revenue growth / PAT margin; the guard must refuse
+    for topic, quote, metric in [("AUM growth", "we expect AUM growth of 20 to 24% for FY27", "revenue_growth"),
+                                 ("return on equity", "ROE of 19 to 20% for FY27", "pat_margin"),
+                                 ("fee income growth outlook", "fee income to grow 17 to 20%", "revenue_growth")]:
+        c = {"metric": metric, "scope": "company", "topic": topic, "quote": quote, "period_text": "FY27",
+             "target": {"type": "range", "low": 17, "high": 24, "unit": "pct"}}
+        assert evaluate(c, SAID, SERIES, LATEST)["status"] == "unverifiable", topic
+
+
+def test_open_ended_guidance_checked_since_the_call():
+    # Asian Paints-style: "EBITDA margin band of 18-20% going forward", said on the Q4 FY26 call
+    c = {"metric": "ebitda_margin", "scope": "company", "topic": "EBITDA margin band", "period_text": "going forward",
+         "quote": "we will maintain an EBITDA margin band of 18 to 20%",
+         "target": {"type": "range", "low": 21, "high": 23, "unit": "pct"}}
+    r = evaluate(c, SAID, SERIES, LATEST)
+    assert r["status"] == "off_track" and r["actual_span"] == "Q1 FY27–Q2 FY27"   # ~19.6% < 21
+    c["target"] = {"type": "range", "low": 18, "high": 20, "unit": "pct"}
+    assert evaluate(c, SAID, SERIES, LATEST)["status"] == "on_track"

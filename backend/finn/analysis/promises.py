@@ -11,6 +11,7 @@ Statuses: delivered | missed | on_track | off_track | pending | unverifiable
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from .periods import label as qlabel, parse_period, shift_quarters
@@ -139,6 +140,15 @@ def target_text(t: dict) -> str:
     return "qualitative"
 
 
+# Words that mean the guidance is NOT about the P&L lines we can check, whatever
+# metric the model picked (it mapped "AUM growth" to revenue growth and ROE to PAT
+# margin on real Bajaj Finance transcripts). Deterministic guard on top of the model.
+NON_PNL = re.compile(r"\baum\b|assets under management|loan|book|disburs|deposit|fee income|\bfee\b|"
+                     r"return on|\broe\b|\broa\b|\bnim\b|net interest margin|credit cost|cost of funds|"
+                     r"gross margin|order|volume|capacity|customer|branch|market share|capex|opex|"
+                     r"segment|export|gold|msme|price increase|pricing", re.I)
+
+
 def evaluate(claim: dict, said_in: date, series: dict, latest: date, annual: dict | None = None) -> dict:
     """claim: verified guidance claim. said_in: quarter of the call. series:
     {quarter_end_iso: metrics}. latest: latest reported quarter end. annual:
@@ -150,6 +160,9 @@ def evaluate(claim: dict, said_in: date, series: dict, latest: date, annual: dic
     base = {"period_label": per["label"] if per else (claim.get("period_text") or "unspecified"),
             "target_text": target_text(claim.get("target") or {}), "assessed_by": "code", "scope": scope,
             "segment": claim.get("segment")}
+    if scope == "company" and NON_PNL.search(f"{claim.get('topic') or ''} {claim.get('quote') or ''}"):
+        scope = "operational"
+        base["scope"] = scope
     if scope != "company":
         what = f"the {claim['segment']} segment" if claim.get("segment") else (
             "volumes, capacity or other operating figures" if scope == "operational" else "one segment")
@@ -158,6 +171,25 @@ def evaluate(claim: dict, said_in: date, series: dict, latest: date, annual: dic
     if metric not in GROWTH and metric not in MARGIN and metric not in LEVEL:
         return {**base, "status": "unverifiable",
                 "detail": "Not measurable from the results statements (e.g. order book, AUM, volumes, qualitative)."}
+    if not per and re.search(r"going forward|go(ing)? ahead|from here|next few quarters|coming quarters|"
+                             r"sustain|maintain|band", f"{claim.get('period_text') or ''} {claim.get('quote') or ''}", re.I):
+        since = [q for q in sorted(series) if date.fromisoformat(q) > said_in and date.fromisoformat(q) <= latest]
+        if not since:
+            return {**base, "status": "pending", "period_label": "since the call",
+                    "detail": "No quarter reported since this was said."}
+        per = {"kind": "since", "quarters": [date.fromisoformat(q) for q in since], "label": "quarters since the call"}
+        base["period_label"] = per["label"]
+        act = actual_for(metric, claim.get("basis"), per["quarters"], series)
+        if act is None:
+            return {**base, "status": "unverifiable", "detail": "Reported figures for those quarters are missing."}
+        met = judge(claim.get("target") or {}, act, metric)
+        if met is None:
+            return {**base, "status": "unverifiable", "actual_text": act["text"],
+                    "detail": "Target wording can't be compared numerically."}
+        span = qlabel(per["quarters"][0]) if len(since) == 1 else f"{qlabel(per['quarters'][0])}–{qlabel(per['quarters'][-1])}"
+        return {**base, "status": "on_track" if met else "off_track", "actual_text": act["text"],
+                "actual_value": round(act["value"], 2), "actual_span": span, "complete": False,
+                "detail": "Open-ended guidance, checked against every quarter reported since the call."}
     if not per:
         return {**base, "status": "unverifiable", "detail": "No specific period was given."}
     qs = per["quarters"]

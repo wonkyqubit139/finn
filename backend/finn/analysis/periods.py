@@ -120,7 +120,7 @@ def parse_period(text: str, reference: date) -> dict | None:
     if re.search(r"second half|\bh2\b", t):
         qs = fy_quarters(cur_fy)[2:]
         return {"kind": "half", "quarters": qs, "label": f"H2 FY{cur_fy:02d}"}
-    if re.search(r"this (financial |fiscal )?year|current (financial |fiscal )?year|full year", t):
+    if re.search(r"this (financial |fiscal )?year|current (financial |fiscal )?year|full year|\bthe year\b|this fiscal", t):
         return {"kind": "year", "quarters": fy_quarters(cur_fy), "label": f"FY{cur_fy:02d}"}
     if re.search(r"next (financial |fiscal )?year", t):
         return {"kind": "year", "quarters": fy_quarters(cur_fy + 1), "label": f"FY{cur_fy + 1:02d}"}

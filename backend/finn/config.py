@@ -56,7 +56,7 @@ STATIC_DIR = Path(_env("FINN_STATIC", str(REPO_ROOT / "backend" / "static")))
 
 LLM_FAST = _tier("FINN_FAST", "gemini-flash-lite-latest")
 # Thinking models can take minutes on long transcripts: keep reasoning short, wait longer.
-LLM_DEEP = _tier("FINN_DEEP", "gemini-flash-latest", effort="low", timeout=300.0)
+LLM_DEEP = _tier("FINN_DEEP", "gemini-flash-latest", effort="low", timeout=150.0)
 
 # Background refresh interval (minutes). 0 disables the scheduler.
 REFRESH_MINUTES = int(_env("FINN_REFRESH_MINUTES", "30") or 0)

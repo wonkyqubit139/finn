@@ -117,3 +117,11 @@ def test_reconcile_flags_restatement():
                       False, [], [3], DOC)
     diffs = R.reconcile([v1, v2])
     assert diffs and diffs[0]["quarter"] == "Q1 FY27" and diffs[0]["metric"] == "revenue"
+
+
+def test_nbfc_detected_from_numbers():
+    # Bajaj-Finance-like: Ind-AS 'corporate' layout, but finance costs ~38% of revenue
+    raw = {**CORP, "format": "corporate", "unit": "crore",
+           "lines": {**CORP["lines"], "finance_costs": [46000, 42000, 38000, 0, 0, 0]}}
+    v = R.build_view(raw, False, [], [3], DOC)
+    assert v["financial"] and v["current"]["ebitda"] is None and "lenders" in v["current"]["ebitda_note"]

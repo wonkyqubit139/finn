@@ -98,7 +98,7 @@ def _complete_json(task: str, version: str, messages: list[dict], *,
         except httpx.TimeoutException as e:
             err = f"timed out after {int(timeout)} s ({e})"
             timeouts += 1
-            if timeouts >= 2:     # a second timeout won't be different; give up rather than wait minutes more
+            if timeouts >= 1:     # a slow model stays slow; give up and let the caller fall back
                 break
             continue
         except httpx.HTTPError as e:
