@@ -1,5 +1,7 @@
 # FINN — Financial Investment Agent
 
+**Live demo:** https://finn-production-48f5e4a8.up.railway.app (mobile-first; open on a phone)
+
 A mobile-first intelligence layer for an Indian-equity investor. FINN has two
 modes:
 
