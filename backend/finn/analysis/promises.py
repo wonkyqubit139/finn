@@ -160,7 +160,9 @@ def evaluate(claim: dict, said_in: date, series: dict, latest: date, annual: dic
     base = {"period_label": per["label"] if per else (claim.get("period_text") or "unspecified"),
             "target_text": target_text(claim.get("target") or {}), "assessed_by": "code", "scope": scope,
             "segment": claim.get("segment")}
-    if scope == "company" and NON_PNL.search(f"{claim.get('topic') or ''} {claim.get('quote') or ''}"):
+    # Judge by the topic label: quotes for genuine company-level targets often mention drivers
+    # ("revenue growth of 15-17%, led by mobile volumes"). Fall back to the quote only if no topic.
+    if scope == "company" and NON_PNL.search(claim.get("topic") or claim.get("quote") or ""):
         scope = "operational"
         base["scope"] = scope
     if scope != "company":
