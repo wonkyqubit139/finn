@@ -23,7 +23,7 @@ from ..sources.announcements import NSEClient, RawAnnouncement
 from ..sources.http import SourceError, get_with_retry
 
 log = logging.getLogger("finn.docs")
-DOC_DIR = config.DB_PATH.parent / "docs"
+DOC_DIR = config.DOC_DIR
 MAX_PDF_BYTES = 40 * 1024 * 1024
 LOOKBACK_DAYS = 470          # ~5 quarters of filings + slack
 
@@ -136,7 +136,10 @@ def ingest_pdf(conn, did: str, data: bytes) -> dict:
 def download(conn, did: str, client: NSEClient | None = None) -> dict:
     row = conn.execute("SELECT * FROM documents WHERE id=?", (did,)).fetchone()
     if row["status"] == "downloaded" and row["local_path"]:
-        return {"pages": row["pages"], "text_pages": row["text_pages"], "cached": True}
+        from pathlib import Path
+        if Path(row["local_path"]).exists() or conn.execute(
+                "SELECT 1 FROM doc_pages WHERE doc_id=? LIMIT 1", (did,)).fetchone():
+            return {"pages": row["pages"], "text_pages": row["text_pages"], "cached": True}
     client = client or NSEClient()
     try:
         r = get_with_retry(client.s, row["url"], headers={"Accept": "application/pdf,*/*",

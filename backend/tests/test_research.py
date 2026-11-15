@@ -270,3 +270,28 @@ def test_feed_enrichment(env, monkeypatch, temp_db):
     assert round(r["yoy"]["revenue"], 1) == 14.3 and r["page"] == 2
     p = items["nse:m1"]["enrichment"]
     assert p["changes"][0]["person"] == "Asha Rao" and p["changes"][0]["page"] == 1 and p["changes"][0]["background"]
+
+
+def test_snapshot_carries_dossiers_and_build_cap(env, monkeypatch, temp_db):
+    from finn.pipeline import ingest
+    monkeypatch.setattr(B, "NSEClient", FakeNSE)
+    assert B.request("DEMO", run_async=False)["status"] == "ready"
+    exp = ingest.export_snapshot()
+    assert exp["dossiers"] == 1 and exp["doc_pages"] > 0 and exp["llm_cache"] > 0
+    monkeypatch.setattr(config, "DB_PATH", temp_db / "deployed.db")
+    with db.connect() as conn:   # a deployed DB needs at least the companies table synced
+        pass
+    res = ingest.load_snapshot_if_empty()
+    assert res["dossiers"] == 1
+    st = B.status("DEMO")
+    assert st["status"] == "ready" and st["data"]["financials"]["table"][0]["label"] == "Q2 FY27"
+    from finn.api import document_page
+    doc = st["data"]["documents"][0]
+    assert "Revenue from operations" in document_page(doc["id"], 2)["text"]   # citations still open
+    # build cap: existing dossier is served; a new symbol is refused
+    monkeypatch.setattr(config, "MAX_BUILDS_PER_HOUR", 1)
+    with db.connect() as conn:
+        conn.execute("UPDATE dossiers SET started_at=?", (db.utcnow(),))
+    assert B.request("DEMO", force=True, run_async=False)["status"] == "ready"
+    with pytest.raises(B.BuildError):
+        B.request("OTHER", run_async=False)

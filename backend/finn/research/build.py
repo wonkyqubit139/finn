@@ -86,6 +86,15 @@ def request(symbol: str, force: bool = False, run_async: bool = True) -> dict:
             age = datetime.now(timezone.utc) - db.parse_utc(cur["built_at"])
             if age < timedelta(hours=FRESH_HOURS):
                 return cur
+        if config.MAX_BUILDS_PER_HOUR:
+            since = db.to_utc_iso(datetime.now(timezone.utc) - timedelta(hours=1))
+            with db.connect() as conn:
+                n = conn.execute("SELECT COUNT(*) FROM dossiers WHERE started_at >= ?", (since,)).fetchone()[0]
+            if n >= config.MAX_BUILDS_PER_HOUR:
+                if cur and cur["status"] == "ready":
+                    return cur          # serve the existing dossier rather than refuse
+                raise BuildError(f"Research limit reached ({config.MAX_BUILDS_PER_HOUR} new builds per hour on this "
+                                 "server). Try again later.")
         with db.connect() as conn:
             conn.execute("INSERT INTO dossiers(symbol, status, progress, started_at) VALUES(?, 'queued', ?, ?) "
                          "ON CONFLICT(symbol) DO UPDATE SET status='queued', progress=excluded.progress, "

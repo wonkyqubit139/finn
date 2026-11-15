@@ -7,12 +7,13 @@ modes:
   changed. It ranks every exchange filing by importance, collapses routine
   paperwork, and raises alerts when a price or volume move crosses *your*
   thresholds.
-- **Pull (in progress):** on-demand research on any NSE company, grounded
-  only in its own filings, including a *Promise Tracker* that compares what
-  management guided with what was reported.
+- **Pull:** on-demand research on any NSE company, grounded only in its own
+  exchange filings (quarterly results statements and concall transcripts).
+  Every figure and claim links to the page it came from. The centrepiece is
+  the **Promise Tracker**: what management guided on recent calls, scored in
+  code against the numbers they later reported.
 
-> Status: the Push side (portfolio, filings feed, classification, priority,
-> alerts, settings) is working end to end. Pull is the next milestone.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how and why it works.
 
 ---
 
@@ -45,9 +46,9 @@ packages for Intel Macs, so it would compile Python and Node from source.
 `cd frontend && npm run dev` in another, then open http://localhost:5173.
 
 **Tests:** `cd backend && source ../.venv/bin/activate && python -m pytest -q`.
-They run offline and cover the classifier (22 real-world subject patterns),
+They run offline (55 tests) and cover the classifier (22 real-world subject patterns),
 the NSE/BSE parsers, alert maths, the NSE→BSE fallback, the snapshot
-round-trip, the LLM cache, and the full refresh → database → API flow.
+round-trip, the LLM cache, results maths, quote verification, promise scoring, and full end-to-end feed and research builds.
 
 ---
 
@@ -68,7 +69,8 @@ Yahoo EOD prices  ─┘                     └─ alert rules (deterministic)
 | Priority | `pipeline/priority.py` | A visible table: base score by category/sub-type, +8 if you watch that category. ≥70 = needs attention, ≥40 = worth a look, else routine. |
 | Alerts | `pipeline/alerts.py` | Price: \|close/prev − 1\| ≥ X%. Volume: today ≥ N × mean of the previous sessions. De-duplicated, so re-runs never repeat an alert. |
 | LLM | `llm.py` | One OpenAI-compatible client (Gemini/Groq/OpenRouter by config). Every response is cached by hash of (task, prompt version, model, input), and every call is logged with tokens (shown under *Alerts & data*). |
-| Snapshot | `pipeline/ingest.py` | `python -m finn.cli export-snapshot` saves data to `data/snapshot.json`. A deployed server whose own fetches are blocked loads it and shows a "Cached snapshot" banner. |
+| Research | `research/`, `analysis/` | See docs/ARCHITECTURE.md. Model transcribes, code calculates; quotes verified; citations enforced. |
+| Snapshot | `pipeline/ingest.py` | `export-snapshot` saves filings, prices, dossiers, page text and cached model answers. An empty deployed DB loads it and shows a "Cached snapshot" banner. |
 
 ### Data honesty
 - Every screen says where its numbers come from. Snapshot data is always
@@ -76,10 +78,50 @@ Yahoo EOD prices  ─┘                     └─ alert rules (deterministic)
 - Test fixtures are synthetic and are used only by the test suite. The app
   never displays made-up data.
 
+## Research a company
+
+In the app, open **Research** and type a symbol (e.g. `DIXON`). The first build
+takes 1–3 minutes and shows its progress. Later views load from cache.
+From the terminal:
+
+```bash
+cd backend && source ../.venv/bin/activate
+python -m finn.cli research DIXON            # build and print a summary
+python -m finn.cli research DIXON --force    # rebuild (cached model answers are reused)
+```
+
+## Deploy (Railway, with persistent SQLite)
+
+Render's free tier and Hugging Face Spaces wipe the disk on restart, and Fly.io
+has no free allowance for new accounts. Railway's free/trial plan includes a
+0.5 GB volume, enough for FINN's database.
+
+1. **Prepare a snapshot on your Mac.** The exchanges may block cloud servers, so
+   the deployed app ships with data fetched from your machine:
+   ```bash
+   bash scripts/refresh.sh
+   cd backend && source ../.venv/bin/activate
+   python -m finn.cli research BAJFINANCE && python -m finn.cli research DIXON && python -m finn.cli research ASIANPAINT
+   python -m finn.cli export-snapshot           # writes data/snapshot.json.gz
+   cd .. && git add data/snapshot.json.gz && git commit -m "Data snapshot" && git push
+   ```
+2. On https://railway.com: **New Project → Deploy from GitHub repo →** pick your repo.
+   Railway finds the `Dockerfile` and `railway.json` itself.
+3. In the service: **Settings → Volumes → Add volume**, mount path `/data`.
+4. **Variables:** `GEMINI_API_KEY=<your key>`, `FINN_DB=/data/finn.db`,
+   `FINN_DOC_DIR=/tmp/finn-docs` (PDFs are only needed while being read, so keep
+   them off the small volume).
+5. **Settings → Networking → Generate domain.** Open it. On first boot the empty
+   volume is filled from the snapshot. Later live refreshes, if the exchanges
+   allow the server, add to it.
+
+`FINN_MAX_BUILDS_PER_HOUR` (default 6) caps new research builds so a public link
+can't exhaust your model quota. Existing dossiers are always served.
+
 ## Useful commands
 
 ```bash
 python -m finn.cli refresh --days 30     # backfill a month of filings
 python -m finn.cli refresh --no-prices   # filings only
-python -m finn.cli export-snapshot       # for deployment fallback
+python -m finn.cli export-snapshot       # data/snapshot.json.gz for deployment
 ```

@@ -193,40 +193,66 @@ def refresh(days: int | None = None, prices: bool = True, announcements: bool = 
 
 # ---- snapshot fallback ---------------------------------------------------------
 
+# Tables carried in a snapshot: enough for the deployed app to show the feed,
+# portfolio, prices AND every pre-built research dossier (with citation page
+# text and cached model answers) even if the exchanges block the server.
+SNAPSHOT_TABLES = ["companies", "announcements", "prices", "alerts", "documents", "doc_pages",
+                   "extractions", "dossiers", "llm_cache"]
+
+
 def export_snapshot() -> dict:
-    """Write the current DB contents (announcements + prices) to data/snapshot.json.
-    Run this after a successful live refresh on a machine that can reach the
-    exchanges; the deployed app loads it if its own live fetches are blocked."""
+    """Write the database's content tables to data/snapshot.json.gz.
+    Run after a successful live refresh (and research builds) on a machine that
+    can reach the exchanges; a deployed server loads it when its DB is empty."""
+    import gzip
+    out: dict = {"captured_at": db.utcnow(), "version": 2}
+    counts = {}
     with db.connect() as conn:
-        anns = [dict(r) for r in conn.execute(
-            "SELECT id, symbol, source, published_at, subject, body, attachment_url FROM announcements")]
-        prices = [dict(r) for r in conn.execute("SELECT symbol, date, open, high, low, close, volume FROM prices")]
-    snap = {"captured_at": db.utcnow(), "announcements": anns, "prices": prices}
-    config.SNAPSHOT_PATH.write_text(json.dumps(snap))
-    return {"announcements": len(anns), "prices": len(prices), "path": str(config.SNAPSHOT_PATH)}
+        for t in SNAPSHOT_TABLES:
+            rows = [dict(r) for r in conn.execute(f"SELECT * FROM {t}")]
+            if t == "documents":
+                for r in rows:
+                    r["local_path"] = None     # PDFs aren't shipped; page text is
+            if t == "dossiers":
+                rows = [r for r in rows if r["status"] == "ready"]
+            out[t] = rows
+            counts[t] = len(rows)
+    path = config.SNAPSHOT_PATH
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(out, f)
+    return {"path": str(path), "bytes": path.stat().st_size, **counts}
 
 
 def load_snapshot_if_empty() -> dict | None:
-    if not config.SNAPSHOT_PATH.exists():
+    import gzip
+    path = config.SNAPSHOT_PATH
+    if not path.exists():
         return None
     with db.connect() as conn:
         if conn.execute("SELECT COUNT(*) FROM announcements").fetchone()[0]:
             return None
-        snap = json.loads(config.SNAPSHOT_PATH.read_text())
+        opener = gzip.open if path.suffix == ".gz" else open
+        with opener(path, "rt", encoding="utf-8") as f:
+            snap = json.load(f)
+        if "version" not in snap:      # v1: announcements + prices only
+            snap = {"captured_at": snap["captured_at"],
+                    "announcements": [{**a, "fetched_at": snap["captured_at"]} for a in snap["announcements"]],
+                    "prices": [{**p, "source": "snapshot"} for p in snap["prices"]]}
         sync_companies(conn)
-        now = db.utcnow()
-        for a in snap["announcements"]:
-            conn.execute("INSERT OR IGNORE INTO announcements(id, symbol, source, published_at, subject, body, "
-                         "attachment_url, fetched_at) VALUES(?,?,?,?,?,?,?,?)",
-                         (a["id"], a["symbol"], a["source"], a["published_at"], a["subject"], a["body"],
-                          a["attachment_url"], now))
-        conn.executemany("INSERT OR IGNORE INTO prices(symbol, date, open, high, low, close, volume, source) "
-                         "VALUES(?,?,?,?,?,?,?, 'snapshot')",
-                         [(p["symbol"], p["date"], p["open"], p["high"], p["low"], p["close"], p["volume"])
-                          for p in snap["prices"]])
+        loaded = {}
+        for t in SNAPSHOT_TABLES:
+            rows = snap.get(t) or []
+            if not rows or t == "companies":
+                continue
+            if t == "prices":
+                rows = [{**r, "source": "snapshot"} for r in rows]
+            cols = list(rows[0].keys())
+            conn.executemany(f"INSERT OR IGNORE INTO {t}({','.join(cols)}) VALUES({','.join('?' * len(cols))})",
+                             [tuple(r.get(c) for c in cols) for r in rows])
+            loaded[t] = len(rows)
         db.mark_source(conn, "snapshot", True, detail=f"captured {snap['captured_at']}")
         settings = db.get_settings(conn)
         classify_pending(conn, settings, use_llm=False)
         syms = [r[0] for r in conn.execute("SELECT symbol FROM companies WHERE in_portfolio=1")]
         alerts.evaluate_price_alerts(conn, syms, settings)
-    return {"loaded": len(snap["announcements"]), "captured_at": snap["captured_at"]}
+    return {"captured_at": snap["captured_at"], **loaded}

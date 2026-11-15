@@ -122,11 +122,11 @@ def test_snapshot_roundtrip(monkeypatch, temp_db):
     from finn import db
     ingest.refresh()
     exp = ingest.export_snapshot()
-    assert exp["announcements"] == 7
+    assert exp["announcements"] == 7 and exp["prices"] == 18 * 30
     # simulate a fresh deployment with an empty DB
     monkeypatch.setattr(config, "DB_PATH", temp_db / "fresh.db")
     res = ingest.load_snapshot_if_empty()
-    assert res["loaded"] == 7
+    assert res["announcements"] == 7
     from finn.api import _data_mode
     with db.connect() as conn:
         assert _data_mode(conn)["mode"] == "snapshot"

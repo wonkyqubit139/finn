@@ -16,7 +16,8 @@ def temp_db(tmp_path, monkeypatch):
     """Every test gets a fresh SQLite file and no LLM key."""
     from finn import config
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
-    monkeypatch.setattr(config, "SNAPSHOT_PATH", tmp_path / "snapshot.json")
+    monkeypatch.setattr(config, "SNAPSHOT_PATH", tmp_path / "snapshot.json.gz")
+    monkeypatch.setattr(config, "MAX_BUILDS_PER_HOUR", 0)
     monkeypatch.setattr(config, "LLM_FAST", config.LLMTier("http://x", "", ""))
     monkeypatch.setattr(config, "REFRESH_MINUTES", 0)
     yield tmp_path

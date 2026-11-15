@@ -46,7 +46,8 @@ def _tier(prefix: str, default_model: str) -> LLMTier:
 
 DB_PATH = Path(_env("FINN_DB", str(REPO_ROOT / "data" / "finn.db")))
 PORTFOLIO_PATH = Path(_env("FINN_PORTFOLIO", str(REPO_ROOT / "data" / "portfolio.json")))
-SNAPSHOT_PATH = Path(_env("FINN_SNAPSHOT", str(REPO_ROOT / "data" / "snapshot.json")))
+SNAPSHOT_PATH = Path(_env("FINN_SNAPSHOT", str(REPO_ROOT / "data" / "snapshot.json.gz")))
+DOC_DIR = Path(_env("FINN_DOC_DIR", str(DB_PATH.parent / "docs")))   # cached PDFs
 STATIC_DIR = Path(_env("FINN_STATIC", str(REPO_ROOT / "backend" / "static")))
 
 LLM_FAST = _tier("FINN_FAST", "gemini-flash-lite-latest")
@@ -56,3 +57,7 @@ LLM_DEEP = _tier("FINN_DEEP", "gemini-flash-latest")
 REFRESH_MINUTES = int(_env("FINN_REFRESH_MINUTES", "30") or 0)
 # How many days of announcements to backfill on each refresh.
 ANNOUNCEMENT_LOOKBACK_DAYS = int(_env("FINN_LOOKBACK_DAYS", "10"))
+
+# New (uncached) research builds allowed per hour, so a public deployment can't
+# exhaust the model quota. 0 = unlimited.
+MAX_BUILDS_PER_HOUR = int(_env("FINN_MAX_BUILDS_PER_HOUR", "6") or 0)
