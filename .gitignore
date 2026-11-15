@@ -7,3 +7,4 @@ node_modules/
 backend/static/
 data/finn.db*
 .DS_Store
+*.tsbuildinfo
