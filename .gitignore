@@ -8,3 +8,5 @@ backend/static/
 data/finn.db*
 .DS_Store
 *.tsbuildinfo
+data/docs/
+data/snapshot.json
