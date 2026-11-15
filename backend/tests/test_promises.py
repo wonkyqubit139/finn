@@ -121,3 +121,10 @@ def test_open_ended_guidance_checked_since_the_call():
     assert r["status"] == "off_track" and r["actual_span"] == "Q1 FY27–Q2 FY27"   # ~19.6% < 21
     c["target"] = {"type": "range", "low": 18, "high": 20, "unit": "pct"}
     assert evaluate(c, SAID, SERIES, LATEST)["status"] == "on_track"
+
+
+def test_company_target_with_drivers_in_quote_still_scored():
+    c = {"metric": "revenue_growth", "scope": "company", "topic": "consolidated revenue growth target",
+         "quote": "we expect consolidated revenue growth of 15 to 17%, led by mobile volumes and exports",
+         "period_text": "FY27", "target": {"type": "range", "low": 12, "high": 15, "unit": "pct"}}
+    assert evaluate(c, SAID, SERIES, LATEST)["status"] == "on_track"
