@@ -69,6 +69,10 @@ def classify_pending(conn, settings: dict, use_llm: bool = True) -> dict:
                      (c.category, c.sub_type, c.rule, p, tier(p), r["id"]))
         if not c.confident:
             pending_llm.append(dict(r))
+    # Commit the rule results BEFORE calling the model. The LLM client logs to
+    # SQLite on its own connection, and SQLite allows one writer at a time:
+    # holding this transaction open across a slow network call would deadlock.
+    conn.commit()
     llm_done = 0
     if use_llm and pending_llm and config.LLM_FAST.enabled:
         results = classify_batch(pending_llm)

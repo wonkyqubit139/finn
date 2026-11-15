@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
+import sqlite3
 import time
 from typing import Any
 
 import httpx
 
 from . import config, db
+
+
+log = logging.getLogger("finn.llm")
 
 
 class LLMUnavailable(RuntimeError):
@@ -97,6 +102,16 @@ def complete_json(task: str, version: str, messages: list[dict], *,
                 {"role": "user", "content": "That was not valid JSON. Reply with only the corrected JSON object."}]
     latency = int((time.time() - t0) * 1000)
 
+    try:
+        _record(task, tier, usage, latency, err, key, parsed)
+    except sqlite3.OperationalError as e:   # bookkeeping must never break the caller
+        log.warning("could not record LLM call: %s", e)
+    if err is not None:
+        raise LLMUnavailable(err)
+    return parsed
+
+
+def _record(task, tier, usage, latency, err, key, parsed) -> None:
     with db.connect() as conn:
         conn.execute(
             "INSERT INTO llm_calls(task, model, prompt_tokens, completion_tokens, cached, latency_ms, ok, error, created_at) "
@@ -109,9 +124,6 @@ def complete_json(task: str, version: str, messages: list[dict], *,
             db.mark_source(conn, "llm", True, detail=tier.model)
         else:
             db.mark_source(conn, "llm", False, error=err, detail=tier.model)
-    if err is not None:
-        raise LLMUnavailable(err)
-    return parsed
 
 
 def usage_summary() -> dict:

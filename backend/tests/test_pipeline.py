@@ -151,3 +151,40 @@ def test_since_last_visit_and_settings_validation(monkeypatch):
         a = client.get("/api/alerts").json()
         msgs = [x["message"] for x in a["alerts"] if x["kind"] == "announcement"]
         assert msgs and not any(m.endswith(": Outcome of Board Meeting") for m in msgs)  # readable text, not raw subject
+
+
+def test_refresh_with_llm_enabled_does_not_deadlock(monkeypatch):
+    """Regression: classify_pending held an open write transaction while the
+    LLM client opened a second connection to log the call → 'database is locked'.
+    Reproduces the real-world case: real filings + a configured model key."""
+    import json
+    import httpx
+    from finn import db, llm  # noqa: F401
+    _patch_network(monkeypatch)
+    monkeypatch.setattr(db, "LOCK_TIMEOUT", 1)           # fail fast instead of waiting 30 s
+    monkeypatch.setattr(config, "LLM_FAST", config.LLMTier("http://fake/v1", "k", "fake-model"))
+
+    def fake_post(url, json=None, **kw):
+        items = __import__("json").loads(json["messages"][1]["content"])
+        reply = {"items": [{"id": it["id"], "category": "press_release", "sub_type": "general",
+                            "summary": "Company issued a press release."} for it in items]}
+
+        class R:
+            status_code = 200
+            headers = {}
+            text = ""
+
+            def json(self):
+                return {"choices": [{"message": {"content": __import__("json").dumps(reply)}}],
+                        "usage": {"prompt_tokens": 50, "completion_tokens": 20}}
+        return R()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    from finn.pipeline import ingest
+    out = ingest.refresh(prices=False)
+    assert out["classification"]["sent_to_llm"] >= 1
+    assert out["classification"]["llm_classified"] == out["classification"]["sent_to_llm"]
+    with db.connect() as conn:
+        row = conn.execute("SELECT classified_by, summary FROM announcements WHERE id='nse:900006'").fetchone()
+        assert row["classified_by"] == "llm:fake-model" and row["summary"]
+        assert conn.execute("SELECT COUNT(*) FROM llm_calls WHERE ok=1").fetchone()[0] == 1

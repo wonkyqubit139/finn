@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 """
 
 _lock = threading.Lock()
+LOCK_TIMEOUT = 30  # seconds a connection waits for another writer to finish
 _initialised: set[str] = set()
 
 
@@ -122,7 +123,7 @@ def parse_utc(s: str) -> datetime:
 
 def _connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30, check_same_thread=False)
+    conn = sqlite3.connect(path, timeout=LOCK_TIMEOUT, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")   # readers don't block the writer
     conn.execute("PRAGMA foreign_keys=ON")
