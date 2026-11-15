@@ -55,7 +55,10 @@ def transcript_input(page_texts: list[str]) -> str:
 def extract(page_texts: list[str]) -> list[dict]:
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": transcript_input(page_texts)}]
-    res = complete_json("guidance", PROMPT_VERSION, messages, tier=config.LLM_DEEP, max_tokens=6000)
+    # Extraction (find statements, copy quotes) doesn't need a thinking model, and on real 20–30 page
+    # transcripts the thinking model timed out. Fast tier first; deep tier only as a fallback.
+    res = complete_json("guidance", PROMPT_VERSION, messages, tier=config.LLM_FAST, max_tokens=5000,
+                        fallback=config.LLM_DEEP)
     claims = (res or {}).get("claims") or []
     return [c for c in claims if isinstance(c, dict) and c.get("quote")]
 

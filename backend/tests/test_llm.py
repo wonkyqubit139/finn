@@ -65,3 +65,28 @@ def test_no_key_raises_cleanly(monkeypatch):
         llm.complete_json("t", "v1", [{"role": "user", "content": "x"}])
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] == 0
+
+
+def test_fallback_tier_used_when_primary_times_out(monkeypatch):
+    monkeypatch.setattr(config, "LLM_FAST", config.LLMTier("http://fast/v1", "k", "fast-model"))
+    deep = config.LLMTier("http://deep/v1", "k", "deep-model", timeout=1)
+
+    def post(url, json=None, **kw):
+        if "deep" in url:
+            raise httpx.ReadTimeout("slow")
+        return FakeResp('{"ok": 1}')
+    monkeypatch.setattr(httpx, "post", post)
+    assert llm.complete_json("t", "v1", [{"role": "user", "content": "x"}], tier=deep,
+                             fallback=config.LLM_FAST) == {"ok": 1}
+
+
+def test_interrupted_build_is_not_stuck(monkeypatch):
+    """A dossier left 'running' by a killed process must be rebuilt, not returned as running forever."""
+    from finn.research import build as B
+    with db.connect() as conn:
+        conn.execute("INSERT INTO dossiers(symbol, status, progress, started_at) VALUES('DIXON','running','[]',?)",
+                     (db.utcnow(),))
+    started = []
+    monkeypatch.setattr(B, "_run", lambda sym, client=None: started.append(sym))
+    B.request("DIXON", run_async=False)
+    assert started == ["DIXON"]

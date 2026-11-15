@@ -44,6 +44,8 @@ FIN_INDUSTRY = re.compile(r"bank|financ|nbfc|lending|insurance|housing finance",
 
 _sem = threading.Semaphore(1)        # one build at a time: free-tier rate limits
 _lock = threading.Lock()
+_active: set[str] = set()            # builds running in THIS process; a 'running' row without
+                                     # an entry here was interrupted (Ctrl+C, restart) and is stale
 
 
 class BuildError(RuntimeError):
@@ -80,7 +82,7 @@ def request(symbol: str, force: bool = False, run_async: bool = True) -> dict:
         raise BuildError("That doesn't look like an NSE symbol (letters, digits, & or -).")
     with _lock:
         cur = status(symbol)
-        if cur and cur["status"] in ("queued", "running"):
+        if cur and cur["status"] in ("queued", "running") and symbol in _active:
             return cur
         if cur and cur["status"] == "ready" and not force and cur["built_at"]:
             age = datetime.now(timezone.utc) - db.parse_utc(cur["built_at"])
@@ -100,6 +102,7 @@ def request(symbol: str, force: bool = False, run_async: bool = True) -> dict:
                          "ON CONFLICT(symbol) DO UPDATE SET status='queued', progress=excluded.progress, "
                          "error=NULL, started_at=excluded.started_at",
                          (symbol, json.dumps(_progress_init()), db.utcnow()))
+    _active.add(symbol)
     if run_async:
         threading.Thread(target=_run, args=(symbol,), daemon=True).start()
     else:
@@ -108,6 +111,14 @@ def request(symbol: str, force: bool = False, run_async: bool = True) -> dict:
 
 
 def _run(symbol: str, client: NSEClient | None = None) -> None:
+    _active.add(symbol)
+    try:
+        _run_inner(symbol, client)
+    finally:
+        _active.discard(symbol)
+
+
+def _run_inner(symbol: str, client: NSEClient | None = None) -> None:
     with _sem:
         try:
             build(symbol, client)
@@ -257,7 +268,7 @@ def build(symbol: str, client: NSEClient | None = None) -> dict:
             if row["status"] != "downloaded":
                 continue
             try:
-                ok, dropped = _guidance(conn, row) if config.LLM_DEEP.enabled else ([], [])
+                ok, dropped = _guidance(conn, row)
             except LLMUnavailable as e:
                 log.warning("guidance failed: %s", e)
                 ok, dropped = [], []

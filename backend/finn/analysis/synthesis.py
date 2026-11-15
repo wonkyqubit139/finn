@@ -69,7 +69,7 @@ def synthesize(company: str, fin_table, promises, qual, excerpts, valid_tags: se
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": build_prompt(company, fin_table, promises, qual, excerpts)}]
     raw = complete_json("synthesis", PROMPT_VERSION, messages, tier=config.LLM_DEEP, max_tokens=5000,
-                        temperature=0.2)
+                        temperature=0.2, fallback=config.LLM_FAST)   # if the deep model times out, use the fast one
     return validate(raw, valid_tags, {c["id"] for c in qual})
 
 

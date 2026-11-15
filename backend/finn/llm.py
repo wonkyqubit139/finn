@@ -48,8 +48,25 @@ def _extract_json(text: str) -> Any:
 
 def complete_json(task: str, version: str, messages: list[dict], *,
                   tier: config.LLMTier | None = None, temperature: float = 0.0,
-                  max_tokens: int = 4096, timeout: float | None = None) -> Any:
-    """Return parsed JSON for a chat request, using the cache when possible."""
+                  max_tokens: int = 4096, timeout: float | None = None,
+                  fallback: config.LLMTier | None = None) -> Any:
+    """Return parsed JSON for a chat request, using the cache when possible.
+    If the call fails (timeout, rate limit, bad JSON) and a fallback tier is
+    given, the same request is tried once on that tier."""
+    try:
+        return _complete_json(task, version, messages, tier=tier, temperature=temperature,
+                              max_tokens=max_tokens, timeout=timeout)
+    except LLMUnavailable:
+        if fallback is None or not fallback.enabled or (tier and fallback.model == tier.model):
+            raise
+        log.warning("%s: primary model failed, falling back to %s", task, fallback.model)
+        return _complete_json(task, version, messages, tier=fallback, temperature=temperature,
+                              max_tokens=max_tokens, timeout=None)
+
+
+def _complete_json(task: str, version: str, messages: list[dict], *,
+                   tier: config.LLMTier | None = None, temperature: float = 0.0,
+                   max_tokens: int = 4096, timeout: float | None = None) -> Any:
     tier = tier or config.LLM_FAST
     if not tier.enabled:
         raise LLMUnavailable("no API key configured")
