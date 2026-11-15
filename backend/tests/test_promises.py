@@ -63,3 +63,40 @@ def test_quote_verification():
     ok, dropped = verify([{"quote": "we expect revenue growth of 12 to 15% for FY27", "page": 1},
                           {"quote": "we will double our order book in two years", "page": 2}], PAGES)
     assert len(ok) == 1 and ok[0]["page"] == 2 and len(dropped) == 1   # page corrected to where it really is
+
+
+ANNUAL = {"2026-03-31": {"revenue": 4300.0, "ebitda": 172.0, "pat": 110.0},
+          "2025-03-31": {"revenue": 3700.0, "ebitda": 150.0, "pat": 100.0}}
+
+
+def test_full_year_claims_use_annual_columns():
+    c = {"metric": "revenue_growth", "scope": "company", "period_text": "FY26",
+         "target": {"type": "range", "low": 15, "high": 17, "unit": "pct"}}
+    r = evaluate(c, date(2025, 6, 30), SERIES, LATEST, ANNUAL)
+    # 4300/3700 − 1 = 16.2% → delivered, scored from the Q4 filing's full-year columns
+    assert r["status"] == "delivered" and r["actual_value"] == 16.22 and "annual" in r["actual_text"]
+    m = {"metric": "ebitda_margin", "scope": "company", "period_text": "FY26",
+         "target": {"type": "at_least", "low": 4.5, "unit": "pct"}}
+    assert evaluate(m, date(2025, 6, 30), SERIES, LATEST, ANNUAL)["status"] == "missed"   # 4.0%
+
+
+def test_segment_and_operational_claims_never_scored_against_company_pnl():
+    seg = {"metric": "revenue", "scope": "segment", "segment": "Telecom", "period_text": "FY27",
+           "target": {"type": "range", "low": 6700, "high": 7000, "unit": "crore"}}
+    r = evaluate(seg, SAID, SERIES, LATEST, ANNUAL)
+    assert r["status"] == "unverifiable" and "Telecom" in r["detail"]
+    op = {"metric": "other", "scope": "operational", "period_text": "FY27",
+          "target": {"type": "range", "low": 32, "high": 33, "unit": None}}
+    assert "volumes" in evaluate(op, SAID, SERIES, LATEST)["detail"]
+
+
+def test_company_revenue_target_uses_labelled_run_rate():
+    c = {"metric": "revenue", "scope": "company", "period_text": "FY27",
+         "target": {"type": "at_least", "low": 4800, "unit": "crore"}}
+    r = evaluate(c, SAID, SERIES, LATEST, ANNUAL)
+    # H1 = 2300 → run-rate 4600 < 4800 → off track, and the text says it's a run-rate
+    assert r["status"] == "off_track" and "run-rate" in r["actual_text"] and r["actual_value"] == 4600
+    # a ₹ target is never compared with a % actual
+    bad = {"metric": "revenue_growth", "scope": "company", "period_text": "Q2 FY27",
+           "target": {"type": "at_least", "low": 5000, "unit": "crore"}}
+    assert evaluate(bad, SAID, SERIES, LATEST)["status"] == "unverifiable"

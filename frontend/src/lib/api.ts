@@ -159,7 +159,7 @@ export interface PeopleEnrichment {
 
 export interface Promise_ {
   id: string; quote: string; speaker: string | null; topic: string | null; metric: string; specificity: string;
-  ref: string; page: number; said_in: string; url: string;
+  ref: string; page: number; said_in: string; said_in_date: string; url: string; scope?: string; segment?: string | null;
   status: "delivered" | "missed" | "on_track" | "off_track" | "pending" | "unverifiable";
   period_label: string; target_text: string; actual_text?: string; actual_span?: string; detail?: string | null;
   assessed_by: string; also_said?: { said_in: string; ref: string; page: number }[]; model_verdict?: string; model_reason?: string; model_cite?: string[];

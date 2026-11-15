@@ -283,7 +283,7 @@ def build(symbol: str, client: NSEClient | None = None) -> dict:
     for row, said_in, claims in sorted(claims_by_doc, key=lambda x: x[1], reverse=True):
         for c in claims:
             n += 1
-            ev = evaluate(c, said_in, series, latest)
+            ev = evaluate(c, said_in, series, latest, fin["annual_by_end"])
             promises.append({"id": f"C{n}", "quote": c["quote"], "speaker": c.get("speaker"), "topic": c.get("topic"),
                              "metric": c.get("metric"), "specificity": c.get("specificity"),
                              "ref": ref[row["id"]], "page": c["page"], "said_in": qlabel(said_in),
@@ -300,13 +300,15 @@ def build(symbol: str, client: NSEClient | None = None) -> dict:
     syn_note = None
     if config.LLM_DEEP.enabled:
         valid = {f"{ref[r['id']]}:p{p}" for r in ordered for p in range(1, (r["pages"] or 0) + 1)}
-        qual = [p for p in promises if p["status"] == "unverifiable"][:8]
+        qual = [p for p in promises if p["status"] == "unverifiable"][:14]
         excerpts = []
         with db.connect() as conn:
             tr_rows = [r for r in ordered if r["kind"] == "transcript"]
             if tr_rows:
                 pts = D.pages(conn, tr_rows[0]["id"])
-                excerpts = [(ref[tr_rows[0]["id"]], i, t) for i, t in enumerate(pts[:4], 1) if len(t.strip()) > 200][:3]
+                # opening remarks of the latest call: where management reports segment and volume
+                # performance, i.e. the evidence for guidance the P&L can't verify
+                excerpts = [(ref[tr_rows[0]["id"]], i, t) for i, t in enumerate(pts[:8], 1) if len(t.strip()) > 200][:6]
         try:
             syn = S.synthesize(info.get("name") or symbol, fin["table"], [p for p in promises if p["status"] != "unverifiable"],
                                qual, excerpts, valid)
@@ -328,7 +330,7 @@ def build(symbol: str, client: NSEClient | None = None) -> dict:
                        "period_label": qlabel(date.fromisoformat(r["period_end"])) if r["period_end"] else None,
                        "title": r["title"], "url": r["url"], "pages": r["pages"], "filed_at": r["filed_at"]}
                       for r in ordered],
-        "financials": {k: v for k, v in fin.items() if k != "series"},
+        "financials": {k: v for k, v in fin.items() if k not in ("series", "annual_by_end")},
         "promises": promises, "dropped_claims": dropped_total,
         "overview": syn.get("overview", []), "bull": syn.get("bull", []), "bear": syn.get("bear", []),
         "narrative_gap": syn.get("narrative_gap"), "uncited_dropped": syn.get("uncited_dropped", 0),
@@ -368,8 +370,12 @@ def assemble_financials(views: list[dict], ref: dict[str, str]) -> dict:
                       "pat_yoy": R._pct(m["pat"], ya["pat"]) if ya else None,
                       "source": src[q]})
     annual_v = next((v for v in reversed(views) if v.get("annual")), None)
+    annual_by_end: dict[str, dict] = {}
+    for v in views:                      # later filings overwrite earlier ones (restatements)
+        for a in v.get("annual") or []:
+            annual_by_end[a["period_end"]] = a
     return {
-        "series": series, "table": table, "latest_period": latest["period_end"], "latest_label": latest["period_label"],
+        "series": series, "annual_by_end": annual_by_end, "table": table, "latest_period": latest["period_end"], "latest_label": latest["period_label"],
         "latest": {k: latest[k] for k in ("current", "previous", "year_ago", "qoq", "yoy", "previous_period",
                                           "year_ago_period", "basis", "format", "financial", "unit_reported",
                                           "unit_note", "checks")} | {"source": {**latest["source"],

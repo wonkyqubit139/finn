@@ -14,7 +14,7 @@ import re
 from .. import config
 from ..llm import complete_json
 
-PROMPT_VERSION = "syn-v1"
+PROMPT_VERSION = "syn-v2"
 
 SYSTEM = """You are an equity analyst writing for a portfolio manager. Use ONLY the material provided:
 no outside knowledge, no news, no market data, no assumptions about the company beyond the sources.
@@ -29,7 +29,10 @@ Return JSON:
                         "reason": "one sentence referencing specific numbers", "cite": [...]}],
  "narrative_gap": {"text": "2-4 sentences: where management's narrative and the reported numbers diverge most", "cite": [...]}
 }
-Only assess claims listed under QUALITATIVE CLAIMS TO ASSESS. Be specific and quantitative; avoid generic statements."""
+Only assess claims listed under QUALITATIVE CLAIMS TO ASSESS. For segment, volume or capacity guidance, the
+evidence is usually what management reported on the LATEST call (in the transcript excerpts): compare the
+earlier promise with that, cite the page, and say "cannot_tell" if the excerpts don't cover it.
+Be specific and quantitative; avoid generic statements."""
 
 TAG = re.compile(r"^(FIN|D(\d+):p(\d+))$")
 
@@ -49,7 +52,7 @@ def build_prompt(company: str, fin_table: list[dict], promises: list[dict], qual
         lines.append(f'- {c["id"]} [{c["ref"]}:p{c["page"]}] said in {c["said_in"]}: "{c["quote"]}"')
     lines += ["", "TRANSCRIPT EXCERPTS:"]
     for ref, page, text in excerpts:
-        lines.append(f"--- {ref}:p{page} ---\n{text[:3500]}")
+        lines.append(f"--- {ref}:p{page} ---\n{text[:4000]}")
     return "\n".join(lines)
 
 

@@ -27,6 +27,8 @@ class LLMTier:
     base_url: str
     api_key: str
     model: str
+    reasoning_effort: str = ""   # "low"/"medium"/"high" for thinking models; "" = provider default
+    timeout: float = 120.0
 
     @property
     def enabled(self) -> bool:
@@ -36,11 +38,13 @@ class LLMTier:
 GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 
-def _tier(prefix: str, default_model: str) -> LLMTier:
+def _tier(prefix: str, default_model: str, effort: str = "", timeout: float = 120.0) -> LLMTier:
     return LLMTier(
         base_url=_env(f"{prefix}_BASE_URL", GEMINI_OPENAI_URL).rstrip("/"),
         api_key=_env(f"{prefix}_API_KEY", _env("GEMINI_API_KEY")),
         model=_env(f"{prefix}_MODEL", default_model),
+        reasoning_effort=_env(f"{prefix}_REASONING_EFFORT", effort),
+        timeout=float(_env(f"{prefix}_TIMEOUT", str(timeout))),
     )
 
 
@@ -51,7 +55,8 @@ DOC_DIR = Path(_env("FINN_DOC_DIR", str(DB_PATH.parent / "docs")))   # cached PD
 STATIC_DIR = Path(_env("FINN_STATIC", str(REPO_ROOT / "backend" / "static")))
 
 LLM_FAST = _tier("FINN_FAST", "gemini-flash-lite-latest")
-LLM_DEEP = _tier("FINN_DEEP", "gemini-flash-latest")
+# Thinking models can take minutes on long transcripts: keep reasoning short, wait longer.
+LLM_DEEP = _tier("FINN_DEEP", "gemini-flash-latest", effort="low", timeout=300.0)
 
 # Background refresh interval (minutes). 0 disables the scheduler.
 REFRESH_MINUTES = int(_env("FINN_REFRESH_MINUTES", "30") or 0)

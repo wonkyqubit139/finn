@@ -137,10 +137,7 @@ function DossierBody({ d }: { d: Dossier }) {
         {d.promises.length === 0 ? (
           <p className="text-[14px] text-muted">No forward-looking statements found in the transcripts available.</p>
         ) : (
-          <ul className="bg-surface rounded-lg border border-rule divide-y divide-rule">
-            {[...d.promises].sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.said_in.localeCompare(a.said_in))
-              .map((p) => <PromiseRow key={p.id} p={p} />)}
-          </ul>
+          <PromiseLists promises={d.promises} />
         )}
         <p className="mt-2 text-[12.5px] text-faint">
           {scored.length} of {d.promises.length} statements scored in code against reported figures.
@@ -256,13 +253,47 @@ function PromiseSummary({ promises }: { promises: Promise_[] }) {
   );
 }
 
+function PromiseLists({ promises }: { promises: Promise_[] }) {
+  const [open, setOpen] = useState(false);
+  const sorted = [...promises].sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.said_in_date.localeCompare(a.said_in_date));
+  const checked = sorted.filter((p) => p.status !== "unverifiable");
+  const other = sorted.filter((p) => p.status === "unverifiable");
+  const assessed = other.filter((p) => p.model_verdict && p.model_verdict !== "cannot_tell").length;
+  return (
+    <>
+      {checked.length > 0 ? (
+        <ul className="bg-surface rounded-lg border border-rule divide-y divide-rule">
+          {checked.map((p) => <PromiseRow key={p.id} p={p} />)}
+        </ul>
+      ) : (
+        <p className="text-[14px] text-muted">None of the guidance is about figures the results statements report.</p>
+      )}
+      {other.length > 0 && (
+        <div className="mt-4">
+          <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-[14px] font-semibold text-accent text-left">
+            {open ? "Hide" : "Show"} {other.length} statement{other.length === 1 ? "" : "s"} about segments, volumes and capacity
+          </button>
+          <p className="text-[12.5px] text-muted">
+            The consolidated results statement can't check these.{assessed > 0 ? ` The model compared ${assessed} with what management reported on the latest call.` : ""}
+          </p>
+          {open && (
+            <ul className="mt-2 bg-surface rounded-lg border border-rule divide-y divide-rule">
+              {other.map((p) => <PromiseRow key={p.id} p={p} />)}
+            </ul>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function PromiseRow({ p }: { p: Promise_ }) {
   const s = STATUS[p.status];
   return (
     <li className="px-4 py-3.5">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className={`text-[12px] font-semibold rounded px-1.5 py-0.5 ${s.cls}`}>{s.label}</span>
-        <span className="text-[13px] text-muted">{p.topic ?? p.metric}, said on the {p.said_in} call</span>
+        <span className="text-[13px] text-muted">{p.topic ?? p.metric}{p.segment ? ` (${p.segment})` : ""}, said on the {p.said_in} call</span>
       </div>
       <blockquote className="mt-2 pl-3 border-l-2 border-rule text-[14.5px] leading-snug">
         “{p.quote}”

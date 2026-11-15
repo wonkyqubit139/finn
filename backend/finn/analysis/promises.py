@@ -17,11 +17,38 @@ from .periods import label as qlabel, parse_period, shift_quarters
 
 GROWTH = {"revenue_growth": "revenue", "ebitda_growth": "ebitda", "pat_growth": "pat"}
 MARGIN = {"ebitda_margin": ("ebitda", "revenue"), "pat_margin": ("pat", "revenue")}
+LEVEL = {"revenue": "revenue"}          # absolute ₹ crore targets for the whole company
 
 
 def _sum(series: dict, qs: list[date], key: str) -> float | None:
     vals = [series.get(q.isoformat(), {}).get(key) for q in qs]
     return None if any(v is None for v in vals) else sum(vals)
+
+
+def actual_annual(metric: str, fy_end: date, annual: dict) -> dict | None:
+    """Full-year figures straight from a Q4 filing's annual columns."""
+    cur = annual.get(fy_end.isoformat())
+    prev = annual.get(fy_end.replace(year=fy_end.year - 1).isoformat())
+    if not cur:
+        return None
+    if metric in GROWTH:
+        k = GROWTH[metric]
+        if not prev or cur.get(k) is None or not prev.get(k) or prev[k] <= 0:
+            return None
+        g = (cur[k] / prev[k] - 1) * 100
+        return {"value": g, "unit": "pct", "text": f"{g:+.1f}% for the full year (annual results)"}
+    if metric in MARGIN:
+        num, den = MARGIN[metric]
+        if cur.get(num) is None or not cur.get(den):
+            return None
+        m = cur[num] / cur[den] * 100
+        prior = (prev[num] / prev[den] * 100) if prev and prev.get(num) is not None and prev.get(den) else None
+        return {"value": m, "unit": "pct", "prior": prior,
+                "text": f"{m:.1f}% for the full year" + (f" (vs {prior:.1f}% the year before)" if prior is not None else "")}
+    if metric in LEVEL and cur.get(LEVEL[metric]) is not None:
+        v = cur[LEVEL[metric]]
+        return {"value": v, "unit": "crore", "text": f"₹{v:,.0f} crore for the full year (annual results)"}
+    return None
 
 
 def actual_for(metric: str, basis: str | None, qs: list[date], series: dict) -> dict | None:
@@ -50,6 +77,11 @@ def actual_for(metric: str, basis: str | None, qs: list[date], series: dict) -> 
         prior = (a0 / r0 * 100) if (a0 is not None and r0) else None
         txt = f"{m:.1f}%" + (f" (vs {prior:.1f}% a year earlier)" if prior is not None else "")
         return {"value": m, "unit": "pct", "text": txt, "prior": prior}
+    if metric in LEVEL:
+        v = _sum(series, qs, LEVEL[metric])
+        if v is None:
+            return None
+        return {"value": v, "unit": "crore", "text": f"₹{v:,.0f} crore"}
     return None
 
 
@@ -70,8 +102,10 @@ def judge(target: dict, actual: dict, metric: str) -> bool | None:
             return None
         delta = v - ref
         return {"up": delta > 0, "down": delta < 0, "stable": abs(delta) <= (0.5 if metric in MARGIN else 2.0)}[d]
-    if unit not in ("pct", "bps", None):
+    if unit not in ("pct", "bps", "crore", None):
         return None
+    if (unit == "crore") != (actual.get("unit") == "crore"):
+        return None            # never compare a ₹ target with a % actual or vice versa
     if typ == "range" and lo is not None and hi is not None:
         return v >= lo  # beating the top of a range counts as delivered
     if typ == "at_least" and lo is not None:
@@ -105,24 +139,47 @@ def target_text(t: dict) -> str:
     return "qualitative"
 
 
-def evaluate(claim: dict, said_in: date, series: dict, latest: date) -> dict:
+def evaluate(claim: dict, said_in: date, series: dict, latest: date, annual: dict | None = None) -> dict:
     """claim: verified guidance claim. said_in: quarter of the call. series:
-    {quarter_end_iso: metrics}. latest: latest reported quarter end."""
+    {quarter_end_iso: metrics}. latest: latest reported quarter end. annual:
+    {fy_end_iso: metrics} from Q4 filings' full-year columns."""
+    annual = annual or {}
     metric = claim.get("metric") or "other"
+    scope = claim.get("scope") or "company"
     per = parse_period(claim.get("period_text") or "", said_in)
     base = {"period_label": per["label"] if per else (claim.get("period_text") or "unspecified"),
-            "target_text": target_text(claim.get("target") or {}), "assessed_by": "code"}
-    if metric not in GROWTH and metric not in MARGIN:
+            "target_text": target_text(claim.get("target") or {}), "assessed_by": "code", "scope": scope,
+            "segment": claim.get("segment")}
+    if scope != "company":
+        what = f"the {claim['segment']} segment" if claim.get("segment") else (
+            "volumes, capacity or other operating figures" if scope == "operational" else "one segment")
+        return {**base, "status": "unverifiable",
+                "detail": f"About {what}, which the consolidated results statement doesn't report."}
+    if metric not in GROWTH and metric not in MARGIN and metric not in LEVEL:
         return {**base, "status": "unverifiable",
                 "detail": "Not measurable from the results statements (e.g. order book, AUM, volumes, qualitative)."}
     if not per:
         return {**base, "status": "unverifiable", "detail": "No specific period was given."}
     qs = per["quarters"]
+    # full year already reported: use the annual columns printed in the Q4 filing
+    if per["kind"] == "year" and qs[-1] <= latest:
+        act = actual_annual(metric, qs[-1], annual)
+        if act is not None:
+            met = judge(claim.get("target") or {}, act, metric)
+            if met is not None:
+                return {**base, "status": "delivered" if met else "missed", "actual_text": act["text"],
+                        "actual_value": round(act["value"], 2), "actual_span": per["label"], "complete": True,
+                        "detail": None}
     reported = [q for q in qs if q <= latest and q.isoformat() in series]
     if not reported:
         nxt = min(qs)
         return {**base, "status": "pending", "detail": f"First relevant results ({qlabel(nxt)}) not yet reported."}
     act = actual_for(metric, claim.get("basis"), reported, series)
+    if act is not None and metric in LEVEL and len(reported) < len(qs):
+        # absolute full-period target, period incomplete: compare the run-rate, and say so
+        run = act["value"] * len(qs) / len(reported)
+        act = {"value": run, "unit": "crore",
+               "text": f"₹{act['value']:,.0f} crore so far; at that run-rate ₹{run:,.0f} crore for {per['label']}"}
     if act is None:
         return {**base, "status": "unverifiable", "detail": "Reported figures for the comparison period are missing."}
     met = judge(claim.get("target") or {}, act, metric)

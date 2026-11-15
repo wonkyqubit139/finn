@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 from .. import config
 from ..llm import complete_json
 
-PROMPT_VERSION = "guid-v1"
+PROMPT_VERSION = "guid-v2"
 MAX_CHARS = 160_000          # ~40k tokens; transcripts are usually far shorter
 
 METRICS = ["revenue_growth", "ebitda_growth", "pat_growth", "ebitda_margin", "pat_margin",
@@ -28,7 +28,10 @@ For each statement return:
 - page: page number (from the === PAGE n === markers) where the quote is
 - quote: an EXACT contiguous excerpt (max 45 words) copied character-for-character
 - topic: 3-6 word label
-- metric: one of %s
+- scope: "company" if it is about the WHOLE company's consolidated numbers, "segment" if about one
+  business/segment/product line, "operational" for volumes, capacity, order book, capex, market share
+- segment: the segment/product name when scope is "segment", else null
+- metric: one of %s   (revenue_growth/margins/pat/ebitda only for scope "company"; else "other")
 - basis: "yoy" | "qoq" | "level" | null      (growth vs last year, vs last quarter, or an absolute level)
 - target: {"type": "range"|"at_least"|"at_most"|"point"|"direction",
            "low": number|null, "high": number|null, "unit": "pct"|"bps"|"crore"|null,

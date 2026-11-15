@@ -48,7 +48,7 @@ def _extract_json(text: str) -> Any:
 
 def complete_json(task: str, version: str, messages: list[dict], *,
                   tier: config.LLMTier | None = None, temperature: float = 0.0,
-                  max_tokens: int = 4096, timeout: float = 120) -> Any:
+                  max_tokens: int = 4096, timeout: float | None = None) -> Any:
     """Return parsed JSON for a chat request, using the cache when possible."""
     tier = tier or config.LLM_FAST
     if not tier.enabled:
@@ -62,8 +62,11 @@ def complete_json(task: str, version: str, messages: list[dict], *,
                          (task, tier.model, db.utcnow()))
             return json.loads(row["response"])
 
+    timeout = timeout or tier.timeout
     payload = {"model": tier.model, "messages": messages, "temperature": temperature,
                "max_tokens": max_tokens, "response_format": {"type": "json_object"}}
+    if tier.reasoning_effort:
+        payload["reasoning_effort"] = tier.reasoning_effort
     headers = {"Authorization": f"Bearer {tier.api_key}"}
     url = f"{tier.base_url}/chat/completions"
 
@@ -71,12 +74,23 @@ def complete_json(task: str, version: str, messages: list[dict], *,
     parsed: Any = None
     usage: dict = {}
     t0 = time.time()
+    timeouts = 0
     for attempt in range(4):
         try:
             r = httpx.post(url, json=payload, headers=headers, timeout=timeout)
+        except httpx.TimeoutException as e:
+            err = f"timed out after {int(timeout)} s ({e})"
+            timeouts += 1
+            if timeouts >= 2:     # a second timeout won't be different; give up rather than wait minutes more
+                break
+            continue
         except httpx.HTTPError as e:
             err = f"network: {e}"
             time.sleep(2 * (attempt + 1))
+            continue
+        if r.status_code == 400 and "reasoning" in r.text.lower() and "reasoning_effort" in payload:
+            payload.pop("reasoning_effort")   # provider doesn't support it: retry without
+            err = "reasoning_effort unsupported"
             continue
         if r.status_code == 429 or r.status_code >= 500:
             # Free tiers rate-limit aggressively; honour Retry-After when given.
