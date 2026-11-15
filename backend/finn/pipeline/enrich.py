@@ -49,7 +49,7 @@ def enrich_pending(since_iso: str) -> dict:
             "SELECT a.*, c.financial AS fin_flag, c.sector FROM announcements a JOIN companies c ON c.symbol=a.symbol "
             "WHERE a.enrichment IS NULL AND a.attachment_url LIKE '%.pdf' AND a.published_at >= ? AND ("
             " (a.category='results' AND a.sub_type IN ('outcome','press_release')) OR "
-            " (a.category='management_change' AND a.sub_type IN ('kmp_join','kmp_exit','director_join','director_exit'))"
+            " (a.category='management_change' AND a.sub_type IN ('kmp_join','kmp_exit','kmp_retire','director_join','director_exit','director_retire','unspecified'))"
             ") ORDER BY a.priority DESC, a.published_at DESC", (since_iso,)).fetchall()
     for a in rows:
         is_res = a["category"] == "results"

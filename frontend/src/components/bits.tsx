@@ -1,4 +1,5 @@
 import type { DataMode, Tier } from "../lib/api";
+import { absTime } from "../lib/format";
 
 /** Priority as three stacked bars — readable at a glance, exact score on hover. */
 export function SignalMark({ priority, tier }: { priority: number; tier: Tier }) {
@@ -47,7 +48,7 @@ export function DataBanner({ data, onRefresh, busy }: { data: DataMode; onRefres
     <div className="mx-4 md:mx-0 mb-4 rounded-lg bg-warn-wash text-warn px-3.5 py-3 text-[13.5px] leading-snug">
       {snapshot ? (
         <p><strong className="font-semibold">Cached snapshot.</strong> Live exchange data couldn't be reached from this
-          server, so you're seeing filings and prices saved earlier ({data.detail?.replace("captured ", "") ?? "date unknown"}).</p>
+          server, so you're seeing filings and prices saved on {snapshotTime(data.detail)}.</p>
       ) : (
         <p><strong className="font-semibold">No data yet.</strong> FINN hasn't fetched filings or prices on this server.</p>
       )}
@@ -78,4 +79,9 @@ export function Skeleton({ rows = 6 }: { rows?: number }) {
       ))}
     </div>
   );
+}
+
+function snapshotTime(detail?: string): string {
+  const iso = detail?.replace("captured ", "");
+  return iso && !Number.isNaN(Date.parse(iso)) ? absTime(iso) : "an earlier date";
 }

@@ -45,7 +45,11 @@ def _scheduler(stop: threading.Event):
 async def lifespan(app: FastAPI):
     with db.connect() as conn:
         sync_companies(conn)
-        ingest.rescore_all(conn, db.get_settings(conn))   # priority table may have changed
+        settings = db.get_settings(conn)
+        changed = ingest.reclassify_by_rules(conn, settings)   # rules may have improved since last run
+        ingest.rescore_all(conn, settings)                       # and so may the priority table
+        if changed:
+            log.info("reclassified %d stored filings with current rules", changed)
     snap = ingest.load_snapshot_if_empty()
     if snap:
         log.info("loaded snapshot: %s", snap)

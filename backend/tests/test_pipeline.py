@@ -188,3 +188,21 @@ def test_refresh_with_llm_enabled_does_not_deadlock(monkeypatch):
         row = conn.execute("SELECT classified_by, summary FROM announcements WHERE id='nse:900006'").fetchone()
         assert row["classified_by"] == "llm:fake-model" and row["summary"]
         assert conn.execute("SELECT COUNT(*) FROM llm_calls WHERE ok=1").fetchone()[0] == 1
+
+
+def test_rule_fixes_apply_to_stored_filings(monkeypatch):
+    from finn import db
+    from finn.pipeline import ingest
+    _patch_network(monkeypatch)
+    ingest.refresh(prices=False)
+    with db.connect() as conn:
+        # simulate a label written by an older rule set, and one written by the model
+        conn.execute("UPDATE announcements SET category='press_release', sub_type='order_win', classified_by='rule:press' "
+                     "WHERE id='nse:900001'")
+        conn.execute("UPDATE announcements SET category='press_release', sub_type='general', classified_by='llm:m', "
+                     "summary='x' WHERE id='nse:900006'")
+        n = ingest.reclassify_by_rules(conn, db.get_settings(conn))
+        rows = {r["id"]: r for r in conn.execute("SELECT * FROM announcements")}
+    assert n == 1
+    assert rows["nse:900001"]["category"] == "results"                 # stale rule label fixed
+    assert rows["nse:900006"]["classified_by"] == "llm:m"              # model label kept where rules can't decide

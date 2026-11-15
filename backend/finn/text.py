@@ -11,8 +11,11 @@ def headline(subject: str, body: str | None, summary: str | None, limit: int = 2
     """Best one-line description: LLM summary > exchange text minus boilerplate > subject."""
     if summary:
         return summary
-    text = _BOILER.sub("", body or "").strip()
-    if len(text) < 12:
+    text = (body or "").strip()
+    for _ in range(2):   # NSE sometimes nests the boilerplate: "X has informed … regarding 'X has informed …'"
+        text = _BOILER.sub("", text).strip().lstrip(",:;-–'\" ").rstrip("'\". ").strip()
+    text = text.rstrip(".") + "." if text else text
+    if len(text) < 5:
         return subject
     text = text[0].upper() + text[1:]
     return text if len(text) <= limit else text[:limit - 3].rsplit(" ", 1)[0] + "…"

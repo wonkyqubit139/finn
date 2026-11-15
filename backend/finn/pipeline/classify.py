@@ -45,7 +45,10 @@ ROUTINE = [
     ("trading_window", _rx(r"trading window")),
     ("share_certificate", _rx(r"(loss|duplicate|issue) of (share )?certificate|74\s*\(5\)|regulation 74")),
     ("investor_complaints", _rx(r"investor (complaints|grievance)")),
-    ("compliance_cert", _rx(r"compliance certificate|certificate under (sebi|regulation)|"
+    ("debt_servicing", _rx(r"redemption of (the )?(commercial papers?|non-convertible|ncds?|debentures?|bonds?)|"
+                           r"(payment|servicing) of interest|interest payment|repayment of (commercial|ncd|debenture)")),
+    ("demat_reminder", _rx(r"dematerialis|dematerializ")),
+    ("compliance_cert", _rx(r"compliance certificate|certificate (under|pursuant to) (the )?(sebi|regulation)|"
                             r"secretarial compliance|regulation 40\(9\)|regulation 7\(3\)")),
     ("esop", _rx(r"\b(esop|esos|esps|rsu)s?\b|employee stock option|employees? stock")),
     ("esg", _rx(r"business responsibility|sustainability report|\bbrsr\b|\besg\b")),
@@ -75,14 +78,23 @@ ROLE_KMP = r"(chief executive|\bceo\b|chief financial|\bcfo\b|managing director|
 
 
 def _mgmt_sub(t: str) -> str:
-    leaving = bool(re.search(r"resign|cessation|ceas|retire|step(s|ped)? down|demise", t))
+    if re.search(r"re-?appoint|continuation|re-?designat", t):
+        change = "reappoint"
+    elif re.search(r"retire", t):
+        change = "retire"
+    elif re.search(r"resign|cessation|ceas|step(s|ped)? down|demise", t):
+        change = "exit"
+    elif re.search(r"appoint|joins|joining|elevat|named", t):
+        change = "join"
+    else:
+        return "unspecified"        # the text only says "change in management": the PDF says who
     if re.search(ROLE_KMP, t):
         role = "kmp"
     elif re.search(r"independent director|non[- ]executive|additional director|nominee director|director", t):
         role = "director"
     else:
         role = "other"   # company secretary, senior management, compliance officer
-    return f"{role}_{'exit' if leaving else 'join'}"
+    return f"{role}_{change}"
 
 
 def _rating_sub(t: str) -> str:
@@ -120,11 +132,20 @@ def _pr_sub(t: str) -> str:
 
 
 RULES: list[tuple[str, str, re.Pattern, object]] = [
+    # NSE subject for orders/actions BY authorities against the company (not order wins)
+    ("reg_action", "litigation", _rx(r"actions? taken or orders? passed|orders? passed by|action taken by"),
+     lambda t: "regulatory"),
+    # results of a parent/group company, or analyst/quarterly reports: informative, not this company's results
+    ("other_results", "press_release", _rx(r"results? (issued|announced|declared|published) by|"
+                                           r"financial results of (its |the )?(parent|holding|promoter)"),
+     lambda t: "general"),
+    ("results_report", "results", _rx(r"quarterly report|investor report|fact ?sheet|earnings update"),
+     lambda t: "presentation"),
     ("results", "results", _rx(r"financial results?|\bresults? (for|of) the (quarter|half|year)|"
                                r"integrated filing.{0,5}financ|unaudited|audited (standalone|consolidated)"), _results_sub),
     ("call_transcript", "earnings_call", _rx(r"transcript|earnings call|conference call|con\.? ?call|concall|"
                                              r"audio recording|investors? call"), _call_sub),
-    ("mgmt", "management_change", _rx(r"change in (directorate|management|key managerial|kmp|senior management)|"
+    ("mgmt", "management_change", _rx(r"change in (directorate|directors|management|key managerial|kmp|senior management)|"
                                       r"appointment|resignation|re-?designation|cessation|retirement|"
                                       r"step(s|ped)? down"), _mgmt_sub),
     ("pledge", "pledging", _rx(r"pledg|encumbrance|regulation 31\b"),
@@ -156,7 +177,7 @@ RULES: list[tuple[str, str, re.Pattern, object]] = [
     ("postal", "postal_ballot", _rx(r"postal ballot"), lambda t: "ballot"),
     ("agm", "agm_egm", _rx(r"\bagm\b|\begm\b|annual general meeting|extra-?ordinary general meeting|"
                            r"shareholders'? meeting|voting results|scrutini[sz]er|e-?voting"), lambda t: "meeting"),
-    ("investor_meet", "investor_meetings", _rx(r"analysts?/institutional investor|investor meet|analyst meet|"
+    ("investor_meet", "investor_meetings", _rx(r"analysts?/institutional investor|investors? meet|analysts? meet|analysts?/investors? meet|"
                                                r"investor conference|one[- ]on[- ]one|roadshow|"
                                                r"institutional investors?"), lambda t: "meeting"),
     ("investor_pres", "results", _rx(r"investor presentation"), lambda t: "presentation"),
@@ -168,7 +189,8 @@ RULES: list[tuple[str, str, re.Pattern, object]] = [
 
 def classify(subject: str, body: str) -> Classification:
     subj = (subject or "").strip()
-    text = f"{subj} || {body or ''}".lower()
+    # NSE writes plurals as "Director(s)", "Analyst(s)/Investor(s)": normalise to plain plurals
+    text = re.sub(r"\(s\)", "s", f"{subj} || {body or ''}".lower())
 
     # Newspaper ads: results ads belong to 'results' (per the reference doc) but
     # carry almost no information; everything else is routine.

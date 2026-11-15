@@ -86,6 +86,25 @@ def classify_pending(conn, settings: dict, use_llm: bool = True) -> dict:
     return {"classified": len(rows), "sent_to_llm": len(pending_llm), "llm_classified": llm_done}
 
 
+def reclassify_by_rules(conn, settings: dict) -> int:
+    """Re-run the (deterministic) rules over stored filings, so rule fixes apply
+    to existing data. A confident rule result replaces any earlier label; for
+    filings the rules can't decide, an earlier model label is kept."""
+    watched = settings["watched_categories"]
+    n = 0
+    for r in conn.execute("SELECT id, subject, body, category, sub_type, classified_by FROM announcements "
+                          "WHERE category IS NOT NULL").fetchall():
+        c = classify(r["subject"], r["body"] or "")
+        if not c.confident and (r["classified_by"] or "").startswith("llm:"):
+            continue
+        if (c.category, c.sub_type, c.rule) != (r["category"], r["sub_type"], r["classified_by"]):
+            p = score(c.category, c.sub_type, watched)
+            conn.execute("UPDATE announcements SET category=?, sub_type=?, classified_by=?, priority=?, tier=? "
+                         "WHERE id=?", (c.category, c.sub_type, c.rule, p, tier(p), r["id"]))
+            n += 1
+    return n
+
+
 def rescore_all(conn, settings: dict) -> None:
     """Priority depends on the watched list, so re-score when settings change."""
     watched = settings["watched_categories"]
