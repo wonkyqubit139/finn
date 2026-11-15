@@ -6,7 +6,7 @@ import { Change, DataBanner, ErrorNote, Skeleton, Sparkline } from "../component
 
 type Sort = "move" | "activity" | "name";
 
-export function PortfolioScreen() {
+export function PortfolioScreen({ openResearch }: { openResearch: (s: string) => void }) {
   const { data, error, loading, reload } = useAsync(() => api.portfolio(), []);
   const [sort, setSort] = useState<Sort>("move");
 
@@ -45,25 +45,26 @@ export function PortfolioScreen() {
 
       {data && (
         <ul className="bg-surface md:rounded-lg border-y md:border border-rule divide-y divide-rule">
-          {rows.map((h) => <HoldingRow key={h.symbol} h={h} pctT={data.thresholds.price_move_pct} volT={data.thresholds.volume_multiple} />)}
+          {rows.map((h) => <HoldingRow key={h.symbol} h={h} pctT={data.thresholds.price_move_pct} volT={data.thresholds.volume_multiple} open={() => openResearch(h.symbol)} />)}
         </ul>
       )}
       {data && (
         <p className="px-4 md:px-0 mt-3 text-[12.5px] text-faint">
           Prices: Yahoo Finance end-of-day{data.holdings.some((h) => h.price_source === "snapshot") ? " (cached snapshot)" : ""}.
-          Volume compared with the trailing average of previous sessions.
+          Volume compared with the trailing average of previous sessions. Tap a holding to research it.
         </p>
       )}
     </div>
   );
 }
 
-function HoldingRow({ h, pctT, volT }: { h: Holding; pctT: number; volT: number }) {
+function HoldingRow({ h, pctT, volT, open }: { h: Holding; pctT: number; volT: number; open: () => void }) {
   const e = h.eod;
   const bigMove = e?.change_pct != null && Math.abs(e.change_pct) >= pctT;
   const bigVol = e?.volume_multiple != null && e.volume_multiple >= volT;
   return (
-    <li className="px-4 py-3">
+    <li className="px-4 py-3 cursor-pointer hover:bg-ground/60" onClick={open}
+        onKeyDown={(e) => { if (e.key === "Enter") open(); }} tabIndex={0} aria-label={`Research ${h.symbol}`}>
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-[15px]">{h.symbol}</div>

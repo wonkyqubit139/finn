@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type Route = "feed" | "portfolio" | "settings";
+export type Route = "feed" | "portfolio" | "research" | "settings";
 
 const NAV: { id: Route; label: string; icon: ReactNode }[] = [
   {
@@ -10,6 +10,10 @@ const NAV: { id: Route; label: string; icon: ReactNode }[] = [
   {
     id: "portfolio", label: "Portfolio",
     icon: <path d="M4 19V9m5.5 10V5M15 19v-7m5.5 7V8" strokeLinecap="round" />,
+  },
+  {
+    id: "research", label: "Research",
+    icon: <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" strokeLinecap="round" /></>,
   },
   {
     id: "settings", label: "Alerts & data",
@@ -65,7 +69,7 @@ export function Shell({ route, go, unseen, onBell, children }: {
 
         {/* Mobile tab bar */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-surface border-t border-rule pb-safe" aria-label="Main">
-          <div className="grid grid-cols-3">
+          <div className="grid grid-cols-4">
             {NAV.map((n) => (
               <button key={n.id} onClick={() => go(n.id)} aria-current={route === n.id ? "page" : undefined}
                       className={`flex flex-col items-center gap-0.5 pt-2 pb-2.5 text-[11.5px] ${route === n.id

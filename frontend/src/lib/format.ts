@@ -96,3 +96,10 @@ export function compactVol(n: number | null | undefined): string {
   if (n >= 1e5) return (n / 1e5).toFixed(1) + " L";
   return n.toLocaleString("en-IN");
 }
+
+/** ₹ crore with Indian grouping; one decimal under 1,000 crore. */
+export function crore(n: number | null | undefined): string {
+  if (n == null) return "–";
+  const d = Math.abs(n) >= 1000 ? 0 : 1;
+  return n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
+}

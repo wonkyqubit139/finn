@@ -110,6 +110,37 @@ class NSEClient:
             data = data.get("data") or []
         return parse_nse(data, symbol)
 
+    def get_json(self, url: str, params: dict | None = None, referer: str = NSE_REFERER):
+        if not self._warm:
+            self.warm()
+        r = get_with_retry(self.s, url, params=params, headers={"Referer": referer}, tries=2)
+        try:
+            return r.json()
+        except Exception as e:
+            raise SourceError(f"NSE returned non-JSON ({e})")
+
+    def quote(self, symbol: str) -> dict:
+        """Company name and industry from NSE's quote API (best effort)."""
+        d = self.get_json("https://www.nseindia.com/api/quote-equity", {"symbol": symbol},
+                          referer=f"https://www.nseindia.com/get-quotes/equity?symbol={symbol}")
+        info = d.get("info") or {}
+        meta = d.get("metadata") or {}
+        ind = d.get("industryInfo") or {}
+        return {"symbol": info.get("symbol") or symbol, "name": info.get("companyName"),
+                "industry": ind.get("industry") or meta.get("industry") or ind.get("basicIndustry"),
+                "isin": info.get("isin")}
+
+    def autocomplete(self, q: str) -> list[dict]:
+        d = self.get_json("https://www.nseindia.com/api/search/autocomplete", {"q": q},
+                          referer="https://www.nseindia.com/")
+        out = []
+        for it in d.get("symbols") or []:
+            if it.get("result_sub_type", "equity") not in ("equity", None) and it.get("result_type") != "symbol":
+                continue
+            if it.get("symbol"):
+                out.append({"symbol": it["symbol"], "name": it.get("symbol_info") or it.get("symbol")})
+        return out[:10]
+
 
 # ---- BSE -------------------------------------------------------------------
 

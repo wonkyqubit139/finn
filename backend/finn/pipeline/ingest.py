@@ -155,7 +155,8 @@ def fetch_prices(conn, symbols: list[str]) -> dict:
     return {"symbols": len(bars), "errors": errors}
 
 
-def refresh(days: int | None = None, prices: bool = True, announcements: bool = True) -> dict:
+def refresh(days: int | None = None, prices: bool = True, announcements: bool = True,
+            enrich: bool = True) -> dict:
     if not _run_lock.acquire(blocking=False):
         return {"status": "already_running"}
     t0 = time.time()
@@ -172,6 +173,14 @@ def refresh(days: int | None = None, prices: bool = True, announcements: bool = 
         if prices:
             with db.connect() as conn:
                 out["prices"] = fetch_prices(conn, [h.symbol for h in holdings])
+        if announcements and enrich:
+            from .enrich import enrich_pending   # local import: enrich pulls in the research stack
+            since = db.to_utc_iso(db.parse_utc(db.utcnow()) - timedelta(days=config.ANNOUNCEMENT_LOOKBACK_DAYS))
+            try:
+                out["enrichment"] = enrich_pending(since)
+            except Exception as e:   # enrichment is a bonus; never fail the refresh for it
+                log.exception("enrichment failed")
+                out["enrichment"] = {"error": str(e)}
         with db.connect() as conn:
             since = db.to_utc_iso(db.parse_utc(db.utcnow()) - timedelta(days=3))
             out["alerts_raised"] = (alerts.evaluate_price_alerts(conn, [h.symbol for h in holdings], settings)

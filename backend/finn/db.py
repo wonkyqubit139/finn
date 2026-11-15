@@ -100,6 +100,51 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     error             TEXT,
     created_at        TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS documents (
+    id          TEXT PRIMARY KEY,      -- sha1 of url (stable)
+    symbol      TEXT NOT NULL,
+    kind        TEXT NOT NULL,         -- 'results' | 'transcript' | 'presentation'
+    period_end  TEXT,                  -- quarter end the document reports on (YYYY-MM-DD)
+    title       TEXT,
+    url         TEXT NOT NULL,
+    source      TEXT NOT NULL,         -- 'nse'
+    filed_at    TEXT,                  -- UTC ISO
+    sha256      TEXT,
+    pages       INTEGER,
+    text_pages  INTEGER,               -- pages with extractable text (0 → scanned)
+    local_path  TEXT,
+    status      TEXT NOT NULL DEFAULT 'found',   -- found | downloaded | failed
+    error       TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_docs_symbol ON documents(symbol, kind, period_end);
+
+CREATE TABLE IF NOT EXISTS doc_pages (
+    doc_id  TEXT NOT NULL,
+    page_no INTEGER NOT NULL,          -- 1-based, as a reader would cite it
+    text    TEXT NOT NULL,
+    PRIMARY KEY (doc_id, page_no)
+);
+
+CREATE TABLE IF NOT EXISTS extractions (
+    doc_id     TEXT NOT NULL,
+    task       TEXT NOT NULL,          -- 'results' | 'guidance'
+    version    TEXT NOT NULL,
+    data       TEXT NOT NULL,          -- JSON
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (doc_id, task, version)
+);
+
+CREATE TABLE IF NOT EXISTS dossiers (
+    symbol     TEXT PRIMARY KEY,
+    status     TEXT NOT NULL,          -- queued | running | ready | failed
+    step       TEXT,
+    progress   TEXT,                   -- JSON list of {step, state, detail}
+    data       TEXT,                   -- JSON dossier
+    error      TEXT,
+    doc_fingerprint TEXT,              -- hash of the document set used → rebuild only when it changes
+    started_at TEXT,
+    built_at   TEXT
+);
 """
 
 _lock = threading.Lock()

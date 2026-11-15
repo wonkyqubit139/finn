@@ -3,6 +3,8 @@ import { api, type Announcement, type MarketAlert } from "../lib/api";
 import { absDate, absTime, categoryLabel, relTime } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { DataBanner, ErrorNote, SignalMark, Skeleton } from "../components/bits";
+import { ChecksLine, ResultsTable } from "../components/ResultsTable";
+import type { PeopleEnrichment, ResultsEnrichment } from "../lib/api";
 
 const WINDOWS: { key: string; label: string }[] = [
   { key: "since_last", label: "Since last visit" },
@@ -12,7 +14,7 @@ const WINDOWS: { key: string; label: string }[] = [
   { key: "30d", label: "30 days" },
 ];
 
-export function FeedScreen({ onDataChanged }: { onDataChanged: () => void }) {
+export function FeedScreen({ onDataChanged, openResearch }: { onDataChanged: () => void; openResearch: (s: string) => void }) {
   const [win, setWin] = useState("24h");
   const [busy, setBusy] = useState(false);
   const { data, error, loading, reload } = useAsync(() => api.feed(win), [win]);
@@ -55,8 +57,8 @@ export function FeedScreen({ onDataChanged }: { onDataChanged: () => void }) {
         <div className={loading ? "opacity-60 transition-opacity" : ""}>
           {data.market_alerts.length > 0 && <MarketMoves alerts={data.market_alerts} />}
 
-          {nHigh > 0 && <Group title="Needs your attention" items={g!.high} />}
-          {nMed > 0 && <Group title="Worth a look" items={g!.medium} />}
+          {nHigh > 0 && <Group title="Needs your attention" items={g!.high} openResearch={openResearch} />}
+          {nMed > 0 && <Group title="Worth a look" items={g!.medium} openResearch={openResearch} />}
           {nHigh + nMed === 0 && data.total > 0 && (
             <p className="px-4 md:px-0 mb-6 text-[14.5px]">Nothing material in this window, only routine paperwork.</p>
           )}
@@ -111,18 +113,18 @@ function MarketMoves({ alerts }: { alerts: MarketAlert[] }) {
   );
 }
 
-function Group({ title, items }: { title: string; items: Announcement[] }) {
+function Group({ title, items, openResearch }: { title: string; items: Announcement[]; openResearch: (s: string) => void }) {
   return (
     <section className="mb-7">
       <SectionTitle>{title}</SectionTitle>
       <ul className="bg-surface md:rounded-lg border-y md:border border-rule divide-y divide-rule">
-        {items.map((a) => <FilingRow key={a.id} a={a} />)}
+        {items.map((a) => <FilingRow key={a.id} a={a} openResearch={openResearch} />)}
       </ul>
     </section>
   );
 }
 
-function FilingRow({ a }: { a: Announcement }) {
+function FilingRow({ a, openResearch }: { a: Announcement; openResearch: (s: string) => void }) {
   const [open, setOpen] = useState(false);
   const by = a.classified_by?.startsWith("llm:") ? `model (${a.classified_by.slice(4)})`
     : a.classified_by === "default" ? "default (no rule matched)" : "exchange subject rule";
@@ -140,14 +142,21 @@ function FilingRow({ a }: { a: Announcement }) {
           <span className="block mt-1 text-[14.5px] leading-snug text-ink">{a.headline}</span>
         </span>
       </button>
+      {a.enrichment?.ok && a.enrichment.type === "results" && <ResultsCard e={a.enrichment} />}
+      {a.enrichment?.ok && a.enrichment.type === "people" && <PeopleCard e={a.enrichment} />}
       {open && (
         <div className="px-4 pb-4 pl-[46px] text-[13.5px] text-muted space-y-1.5">
           <p><span className="text-ink">{a.company}</span>. Filed {absTime(a.published_at)} on {a.source.toUpperCase()} as “{a.subject}”.</p>
           <p>Priority {a.priority}/100, set by {by}.</p>
-          {a.attachment_url && (
-            <a href={a.attachment_url} target="_blank" rel="noreferrer"
-               className="inline-block mt-1 font-semibold text-accent underline underline-offset-2">Open the filing (PDF)</a>
-          )}
+          <div className="flex gap-4 pt-1">
+            {a.attachment_url && (
+              <a href={a.attachment_url} target="_blank" rel="noreferrer"
+                 className="font-semibold text-accent underline underline-offset-2">Open the filing (PDF)</a>
+            )}
+            <button onClick={() => openResearch(a.symbol)} className="font-semibold text-accent underline underline-offset-2">
+              Research {a.symbol}
+            </button>
+          </div>
         </div>
       )}
     </li>
@@ -177,5 +186,32 @@ function Routine({ items }: { items: Announcement[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+function ResultsCard({ e }: { e: ResultsEnrichment }) {
+  return (
+    <div className="mx-4 mb-3.5 ml-[46px] rounded-lg bg-ground/70 px-3 py-2">
+      <div className="text-[12.5px] text-muted mb-1">{e.period_label}, {e.basis} figures read from the filing</div>
+      <ResultsTable current={e.current} qoq={e.qoq} yoy={e.yoy} financial={e.financial} compact />
+      <p className="mt-1.5 text-[12px] text-muted leading-snug">
+        <ChecksLine checks={e.checks} />{" "}
+        <a href={e.url} target="_blank" rel="noreferrer" className="text-accent font-semibold">Statement on page {e.page}</a>
+      </p>
+    </div>
+  );
+}
+
+function PeopleCard({ e }: { e: PeopleEnrichment }) {
+  return (
+    <div className="mx-4 mb-3.5 ml-[46px] rounded-lg bg-ground/70 px-3 py-2 space-y-1.5 text-[13.5px]">
+      {e.changes.map((c, i) => (
+        <p key={i} className="leading-snug">
+          <strong className="font-semibold">{c.person}</strong>, {c.role} ({c.change}{c.effective ? `, effective ${c.effective}` : ""}).
+          {c.background && <span className="text-muted"> {c.background}</span>}
+          {c.page && <a href={e.url} target="_blank" rel="noreferrer" className="ml-1 text-[12px] text-accent font-semibold">p{c.page}</a>}
+        </p>
+      ))}
+    </div>
   );
 }

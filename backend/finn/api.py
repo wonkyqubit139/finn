@@ -1,6 +1,7 @@
 """FastAPI application: JSON API under /api, built frontend served at /."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -18,6 +19,8 @@ from .pipeline import alerts as alert_rules
 from .pipeline import ingest
 from .pipeline.classify import CATEGORIES
 from .portfolio import sync_companies
+from .research import build as research
+from .sources.announcements import NSEClient
 from .text import headline
 
 log = logging.getLogger("finn")
@@ -102,7 +105,10 @@ def _ann_row(r, names: dict[str, str]) -> dict:
     d = dict(r)
     d["company"] = names.get(d["symbol"], d["symbol"])
     d["headline"] = headline(d["subject"], d["body"], d["summary"])
-    d.pop("enrichment", None)
+    try:
+        d["enrichment"] = json.loads(d["enrichment"]) if d.get("enrichment") else None
+    except ValueError:
+        d["enrichment"] = None
     return d
 
 
@@ -258,6 +264,67 @@ def sources():
 @app.get("/api/llm/usage")
 def llm_usage():
     return llm.usage_summary()
+
+
+# ---- research (Pull) --------------------------------------------------------------------
+
+@app.get("/api/search")
+def search(q: str = ""):
+    """Symbol search: NSE's autocomplete when reachable, else known companies."""
+    q = q.strip()
+    if not q:
+        return {"results": [], "source": None}
+    try:
+        res = NSEClient().autocomplete(q)
+        if res:
+            return {"results": res, "source": "nse"}
+    except Exception:
+        pass
+    with db.connect() as conn:
+        rows = conn.execute("SELECT symbol, name FROM companies WHERE symbol LIKE ? OR name LIKE ? LIMIT 10",
+                            (f"{q.upper()}%", f"%{q}%")).fetchall()
+    return {"results": [dict(r) for r in rows], "source": "local"}
+
+
+@app.get("/api/research")
+def research_list():
+    with db.connect() as conn:
+        rows = conn.execute("SELECT symbol, status, built_at, json_extract(data, '$.name') AS name, "
+                            "json_extract(data, '$.latest_label') AS latest_label FROM dossiers "
+                            "ORDER BY COALESCE(built_at, started_at) DESC").fetchall()
+    demo = []
+    try:
+        demo = json.loads(config.PORTFOLIO_PATH.read_text()).get("research_demo", [])
+    except Exception:
+        pass
+    return {"dossiers": [dict(r) for r in rows], "suggested": demo}
+
+
+@app.post("/api/research/{symbol}")
+def research_start(symbol: str, force: bool = False, sync: bool = False):
+    try:
+        return research.request(symbol, force=force, run_async=not sync)
+    except research.BuildError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/research/{symbol}")
+def research_get(symbol: str):
+    st = research.status(symbol.strip().upper())
+    if not st:
+        raise HTTPException(404, "No research for this symbol yet.")
+    return st
+
+
+@app.get("/api/documents/{doc_id}/pages/{page_no}")
+def document_page(doc_id: str, page_no: int):
+    """Page text, so a citation can be checked in-app next to the original PDF link."""
+    with db.connect() as conn:
+        d = conn.execute("SELECT id, symbol, kind, title, url, pages FROM documents WHERE id=?", (doc_id,)).fetchone()
+        p = conn.execute("SELECT text FROM doc_pages WHERE doc_id=? AND page_no=?", (doc_id, page_no)).fetchone()
+    if not d or not p:
+        raise HTTPException(404, "page not found")
+    return {**dict(d), "page": page_no, "text": p["text"]}
 
 
 # ---- frontend -------------------------------------------------------------------------
